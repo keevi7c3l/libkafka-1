@@ -77,6 +77,7 @@ kafka_producer_new(const char *topic, const char *zkServer)
 	p->topics = json_object();
 	p->brokers = broker_map_new(p->zh, &ids);
 	free_String_vector(&ids);
+	pthread_mutex_unlock(&p->mtx);
 
 	return p;
 }
