@@ -24,17 +24,41 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <stdio.h>
-#include <kafka.h>
+#include <assert.h>
+#include <string.h>
 
-int main(int argc, char **argv)
+#include <zookeeper/zookeeper.h>
+
+#include "kafka-private.h"
+#include "jansson/jansson.h"
+
+json_t *
+broker_map_new(zhandle_t *zh, struct String_vector *v)
 {
-	struct kafka_producer *p;
-	p = kafka_producer_new("test", "ubuntu:2181");
-	if (p) {
-		sleep(5);
-		printf("cleaning up\n");
-		kafka_producer_free(p);
+	int i, rc;
+	json_t *out = json_object();
+	for (i = 0; i < v->count; i++) {
+		char znode[256], buf[1024];
+		int len;
+		json_t *broker;
+		json_error_t err;
+
+		memset(znode, 0, sizeof znode);
+		memset(buf, 0, sizeof buf);
+		len = sizeof buf;
+
+		snprintf(znode, sizeof znode, "/brokers/ids/%s", v->data[i]);
+
+		rc = zoo_get(zh, znode, 0, buf, &len, NULL);
+		assert((size_t)len < sizeof buf);
+		if (rc != ZOK)
+			return NULL;
+
+		broker = json_loads(buf, 0, &err);
+		if (!broker)
+			return NULL;
+
+		json_object_set(out, v->data[i], broker);
 	}
-	return 0;
+	return out;
 }

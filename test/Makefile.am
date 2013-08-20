@@ -5,4 +5,9 @@ check_PROGRAMS = \
 	test
 
 test_SOURCES = test.c
-test_LDADD = $(top_builddir)/src/libkafka.la
+test_LDADD = \
+	$(top_builddir)/src/libkafka.la \
+	-lzookeeper_mt
+
+clean-local:
+	rm -f *~

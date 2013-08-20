@@ -27,7 +27,16 @@
 #ifndef _LIBKAFKA_PRIVATE_H_
 #define _LIBKAFKA_PRIVATE_H_
 
+#include <zookeeper/zookeeper.h>
+#include "jansson/jansson.h"
+
 #define KAFKA_EXPORT __attribute__((visibility("default")))
+
+/* broker.c */
+json_t *broker_map_new(zhandle_t *zh, struct String_vector *v);
+
+/* util.c */
+void free_String_vector(struct String_vector *v);
 
 /**
  * OBJ stuff taken from miniobj.h in Varnish. Written by PHK.

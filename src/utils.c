@@ -24,17 +24,16 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <stdio.h>
-#include <kafka.h>
+#include <zookeeper/zookeeper.h>
+#include "kafka-private.h"
 
-int main(int argc, char **argv)
+void free_String_vector(struct String_vector *v)
 {
-	struct kafka_producer *p;
-	p = kafka_producer_new("test", "ubuntu:2181");
-	if (p) {
-		sleep(5);
-		printf("cleaning up\n");
-		kafka_producer_free(p);
+	if (v->data) {
+		int i;
+		for (i = 0; i < v->count; i++)
+			free(v->data[i]);
+		free(v->data);
+		v->data = NULL;
 	}
-	return 0;
 }

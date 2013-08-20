@@ -7,4 +7,4 @@ Name: libkafka
 Description: Apache Kafka C Library
 Version: @PACKAGE_VERSION@
 Cflags: -I${includedir}/kafka
-Libs: -L${libdir} -lkafka
+Libs: -L${libdir} -lkafka -lzookeeper_mt

@@ -21,6 +21,9 @@ lib_LTLIBRARIES = libkafka.la
 libkafka_la_SOURCES = \
 	kafka-private.h \
 	kafka.c \
+	broker.c \
+	utils.c \
+	producer/producer.c \
 	jansson/dump.c \
 	jansson/error.c \
 	jansson/hashtable.c \
