@@ -37,3 +37,42 @@ void free_String_vector(struct String_vector *v)
 		v->data = NULL;
 	}
 }
+
+char *string_builder(const char *fmt, ...)
+{
+    /**
+     * This function replaces this pattern of code:
+     *
+     * int sz = strlen(foo) + strlen(bar) + 2;
+     * char *buf = malloc(sz);
+     * snprintf(buf, sz, "%s/%s", foo, bar);
+     *
+     * In favor of:
+     *
+     * char *buf = string_builder("%s/%s", foo, bar);
+     */
+    int n, sz = 32;
+    char *p, *np;
+    va_list ap;
+
+    if (!(p = malloc(sz)))
+        return NULL;
+
+    while (1) {
+        va_start(ap, fmt);
+        n = vsnprintf(p, sz, fmt, ap);
+        va_end(ap);
+        if (n > -1 && n < sz)
+            break;
+        if (n > -1)
+            sz = n+1;
+        else
+            sz *= 2;
+        if (!(np = realloc(p, sz))) {
+            free(p);
+            return NULL;
+        }
+        p = np;
+    }
+    return p;
+}

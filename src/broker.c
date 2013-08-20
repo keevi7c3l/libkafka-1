@@ -32,33 +32,60 @@
 #include "kafka-private.h"
 #include "jansson/jansson.h"
 
+static json_t *
+get_json_from_znode(zhandle_t *zh, const char *znode)
+{
+	int rc;
+	json_t *js;
+	json_error_t err;
+	char buf[1024];
+	int len;
+	memset(buf, 0, sizeof buf);
+	rc = zoo_get(zh, znode, 0, buf, &len, NULL);
+	assert((size_t)len < sizeof buf);
+	if (rc != ZOK)
+		return NULL;
+	return json_loads(buf, 0, &err);
+}
+
 json_t *
 broker_map_new(zhandle_t *zh, struct String_vector *v)
 {
 	int i, rc;
 	json_t *out = json_object();
 	for (i = 0; i < v->count; i++) {
-		char znode[256], buf[1024];
-		int len;
+		char *znode;
 		json_t *broker;
 		json_error_t err;
 
-		memset(znode, 0, sizeof znode);
-		memset(buf, 0, sizeof buf);
-		len = sizeof buf;
-
-		snprintf(znode, sizeof znode, "/brokers/ids/%s", v->data[i]);
-
-		rc = zoo_get(zh, znode, 0, buf, &len, NULL);
-		assert((size_t)len < sizeof buf);
-		if (rc != ZOK)
-			return NULL;
-
-		broker = json_loads(buf, 0, &err);
+		znode = string_builder("/brokers/ids/%s", v->data[i]);
+		assert(znode);		
+		broker = get_json_from_znode(zh, znode);
+		free(znode);
 		if (!broker)
-			return NULL;
-
+			continue;
 		json_object_set(out, v->data[i], broker);
+	}
+	return out;
+}
+
+json_t *
+topic_map_new(zhandle_t *zh, struct String_vector *v)
+{
+	int i, rc;
+	json_t *out = json_object();
+	for (i = 0; i < v->count; i++) {
+		char *znode;
+		json_t *topic;
+		json_error_t err;
+
+		znode = string_builder("/brokers/topics/%s", v->data[i]);
+		assert(znode);
+		topic = get_json_from_znode(zh, znode);
+		free(znode);
+		if (!topic)
+			continue;
+		json_object_set(out, v->data[i], topic);
 	}
 	return out;
 }

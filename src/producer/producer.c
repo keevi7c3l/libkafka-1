@@ -36,6 +36,8 @@
 
 static void init_watcher(zhandle_t *zp, int type, int state, const char *path, void *ctx);
 static void watch_broker_ids(zhandle_t *zp, int type, int state, const char *path, void *ctx);
+static int kp_init_brokers(struct kafka_producer *p);
+static int kp_init_topics(struct kafka_producer *p);
 
 struct kafka_producer {
 	unsigned magic;
@@ -48,11 +50,10 @@ struct kafka_producer {
 };
 
 KAFKA_EXPORT struct kafka_producer *
-kafka_producer_new(const char *topic, const char *zkServer)
+kafka_producer_new(const char *zkServer)
 {
 	int rc;
 	struct kafka_producer *p;
-	struct String_vector ids;
 
 	p = calloc(1, sizeof *p);
 	if (!p)
@@ -64,21 +65,18 @@ kafka_producer_new(const char *topic, const char *zkServer)
 		return NULL;
 	}
 
-	rc = zoo_wget_children(p->zh, "/brokers/ids", watch_broker_ids, p, &ids);
-	if (rc != ZOK || ids.count == 0) {
+	p->magic = KAFKA_PRODUCER_MAGIC;
+	pthread_mutex_init(&p->mtx, NULL);
+
+	if (kp_init_brokers(p) == -1) {
 		free(p);
 		return NULL;
 	}
 
-	p->magic = KAFKA_PRODUCER_MAGIC;
-	pthread_mutex_init(&p->mtx, NULL);
-
-	pthread_mutex_lock(&p->mtx);
-	p->topics = json_object();
-	p->brokers = broker_map_new(p->zh, &ids);
-	free_String_vector(&ids);
-	pthread_mutex_unlock(&p->mtx);
-
+	if (kp_init_topics(p) == -1) {
+		free(p);
+		return NULL;
+	}
 	return p;
 }
 
@@ -88,6 +86,8 @@ kafka_producer_free(struct kafka_producer *p)
 	CHECK_OBJ_NOTNULL(p, KAFKA_PRODUCER_MAGIC);
 	if (p->zh)
 		zookeeper_close(p->zh);
+	json_decref(p->topics);
+	json_decref(p->brokers);
 	pthread_mutex_destroy(&p->mtx);
 	free(p);
 }
@@ -133,4 +133,55 @@ watch_broker_ids(zhandle_t *zp, int type, int state, const char *path,
 		p->brokers = broker_map_new(p->zh, &ids);
 		pthread_mutex_unlock(&p->mtx);
 	}
+}
+
+static void
+watch_broker_topics(zhandle_t *zp, int type, int state, const char *path,
+		void *ctx)
+{
+	/**
+	 * re-map topics
+	 */
+	(void)state;
+	(void)path;
+	struct String_vector topics;
+	struct kafka_producer *p = (struct kafka_producer *)ctx;
+	if (type == ZOO_CHILD_EVENT) {
+		pthread_mutex_lock(&p->mtx);
+		json_decref(p->topics);
+		zoo_wget_children(zp, "/brokers/topics", watch_broker_topics, p, &topics);
+		p->topics = topic_map_new(p->zh, &topics);
+		pthread_mutex_unlock(&p->mtx);
+	}
+}
+
+static int
+kp_init_brokers(struct kafka_producer *p)
+{
+	int rc;
+	struct String_vector ids;
+	rc = zoo_wget_children(p->zh, "/brokers/ids", watch_broker_ids, p, &ids);
+	if (rc != ZOK || ids.count == 0)
+		return -1;
+	pthread_mutex_lock(&p->mtx);
+	p->brokers = broker_map_new(p->zh, &ids);
+	pthread_mutex_unlock(&p->mtx);
+	free_String_vector(&ids);
+	return 0;
+}
+
+static int
+kp_init_topics(struct kafka_producer *p)
+{
+	int rc;
+	struct String_vector topics;
+	rc = zoo_wget_children(p->zh, "/brokers/topics",
+			watch_broker_topics, p, &topics);
+	if (rc != ZOK || topics.count == 0)
+		return -1;
+	pthread_mutex_lock(&p->mtx);
+	p->topics = topic_map_new(p->zh, &topics);
+	pthread_mutex_unlock(&p->mtx);
+	free_String_vector(&topics);
+	return 0;
 }

@@ -34,9 +34,11 @@
 
 /* broker.c */
 json_t *broker_map_new(zhandle_t *zh, struct String_vector *v);
+json_t *topic_map_new(zhandle_t *zh, struct String_vector *v);
 
-/* util.c */
+/* utils.c */
 void free_String_vector(struct String_vector *v);
+char *string_builder(const char *fmt, ...);
 
 /**
  * OBJ stuff taken from miniobj.h in Varnish. Written by PHK.
