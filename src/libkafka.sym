@@ -1,0 +1,7 @@
+LIBKAFKA_1 {
+global:
+        kafka_foo;
+
+local:
+        *;
+};

@@ -1,0 +1,10 @@
+prefix=@prefix@
+exec_prefix=@exec_prefix@
+libdir=@libdir@
+includedir=@includedir@
+
+Name: libkafka
+Description: Apache Kafka C Library
+Version: @PACKAGE_VERSION@
+Cflags: -I${includedir}/kafka
+Libs: -L${libdir} -lkafka
