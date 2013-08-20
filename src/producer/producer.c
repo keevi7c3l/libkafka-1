@@ -83,10 +83,22 @@ kafka_producer_new(const char *zkServer)
 KAFKA_EXPORT void
 kafka_producer_free(struct kafka_producer *p)
 {
+	void *iter;
 	CHECK_OBJ_NOTNULL(p, KAFKA_PRODUCER_MAGIC);
 	if (p->zh)
 		zookeeper_close(p->zh);
 	json_decref(p->topics);
+
+	iter = json_object_iter(p->brokers);
+	for (; iter; iter = json_object_iter_next(p->brokers, iter)) {
+		int fd;
+		json_t *obj = json_object_iter_value(iter);
+		json_t *v = json_object_get(obj, "fd");
+		if (v) {
+			fd = json_integer_value(v);
+			close(fd);
+		}
+	}
 	json_decref(p->brokers);
 	pthread_mutex_destroy(&p->mtx);
 	free(p);

@@ -26,11 +26,54 @@
 
 #include <assert.h>
 #include <string.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <netdb.h>
 
 #include <zookeeper/zookeeper.h>
 
 #include "kafka-private.h"
 #include "jansson/jansson.h"
+
+static unsigned long
+gethostaddress(const struct hostent *h)
+{
+	/**
+	 * returns host address in network byte order
+	 */
+	struct in_addr **list;
+	list = (struct in_addr **)h->h_addr_list;
+	return inet_addr(inet_ntoa(*list[0]));
+}
+
+static int
+broker_connect(json_t *broker)
+{
+	int fd;
+	unsigned slen;
+	unsigned long hostaddr;
+	struct sockaddr_in sin;
+	struct hostent *he;
+	const char *host;
+	int port;
+	host = json_string_value(json_object_get(broker, "host"));
+	port = json_integer_value(json_object_get(broker, "port"));
+	he = gethostbyname(host);
+	if (!he)
+		return -1;
+	hostaddr = gethostaddress(he);
+	slen = sizeof sin;
+	memset(&sin, 0, slen);
+	sin.sin_family = AF_INET;
+	sin.sin_port = htons(port);
+	sin.sin_addr.s_addr = hostaddr;
+	fd = socket(AF_INET, SOCK_STREAM, 0);
+	if (fd == -1)
+		return -1;
+	if (connect(fd, (struct sockaddr *)&sin, slen) == -1)
+		return -1;
+	return fd;
+}
 
 static json_t *
 get_json_from_znode(zhandle_t *zh, const char *znode)
@@ -39,8 +82,8 @@ get_json_from_znode(zhandle_t *zh, const char *znode)
 	json_t *js;
 	json_error_t err;
 	char buf[1024];
-	int len;
-	memset(buf, 0, sizeof buf);
+	int len = sizeof buf;
+	memset(buf, 0, len);
 	rc = zoo_get(zh, znode, 0, buf, &len, NULL);
 	assert((size_t)len < sizeof buf);
 	if (rc != ZOK)
@@ -54,6 +97,7 @@ broker_map_new(zhandle_t *zh, struct String_vector *v)
 	int i, rc;
 	json_t *out = json_object();
 	for (i = 0; i < v->count; i++) {
+		int fd;
 		char *znode;
 		json_t *broker;
 		json_error_t err;
@@ -62,9 +106,15 @@ broker_map_new(zhandle_t *zh, struct String_vector *v)
 		assert(znode);		
 		broker = get_json_from_znode(zh, znode);
 		free(znode);
+
 		if (!broker)
 			continue;
-		json_object_set(out, v->data[i], broker);
+
+		fd = broker_connect(broker);
+		if (fd != -1) {
+			json_object_set(broker, "fd", json_integer(fd));
+			json_object_set(out, v->data[i], broker);
+		}
 	}
 	return out;
 }
@@ -83,8 +133,10 @@ topic_map_new(zhandle_t *zh, struct String_vector *v)
 		assert(znode);
 		topic = get_json_from_znode(zh, znode);
 		free(znode);
+
 		if (!topic)
 			continue;
+
 		json_object_set(out, v->data[i], topic);
 	}
 	return out;
