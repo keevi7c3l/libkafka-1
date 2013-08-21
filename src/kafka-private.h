@@ -33,6 +33,16 @@
 
 #define KAFKA_EXPORT __attribute__((visibility("default")))
 
+struct kafka_producer {
+	unsigned magic;
+#define KAFKA_PRODUCER_MAGIC 0xb5be14d0
+	zhandle_t *zh;
+	clientid_t cid;
+	json_t *topics;
+        json_t *brokers;
+	pthread_mutex_t mtx;
+};
+
 /* broker.c */
 json_t *broker_map_new(zhandle_t *zh, struct String_vector *v);
 json_t *topic_map_new(zhandle_t *zh, struct String_vector *v);
@@ -45,8 +55,15 @@ void print_bytes(uint8_t *buf, size_t len);
 /* crc32.c */
 uint32_t crc32(uint32_t crc, const void *buf, size_t size);
 
-/* producer/request.c */
+/* producer/watchers.c */
+void producer_init_watcher(zhandle_t *zp, int type, int state,
+			const char *path, void *ctx);
+void producer_watch_broker_ids(zhandle_t *zp, int type, int state,
+			const char *path, void *ctx);
+void producer_watch_broker_topics(zhandle_t *zp, int type, int state,
+				const char *path, void *ctx);
 
+/* producer/request.c */
 enum {PRODUCE=0, FETCH=1, MULTIFETCH=2, MULTIPRODUCE=3, OFFSETS=4};
 
 typedef struct {

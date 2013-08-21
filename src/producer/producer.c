@@ -35,20 +35,9 @@
 
 #include "../jansson/jansson.h"
 
-static void init_watcher(zhandle_t *zp, int type, int state, const char *path, void *ctx);
-static void watch_broker_ids(zhandle_t *zp, int type, int state, const char *path, void *ctx);
 static int kp_init_brokers(struct kafka_producer *p);
 static int kp_init_topics(struct kafka_producer *p);
-
-struct kafka_producer {
-	unsigned magic;
-#define KAFKA_PRODUCER_MAGIC 0xb5be14d0
-	zhandle_t *zh;
-	clientid_t cid;
-	json_t *topics;
-        json_t *brokers;
-	pthread_mutex_t mtx;
-};
+static json_t *kp_broker_by_id(struct kafka_producer *p, int id);
 
 KAFKA_EXPORT struct kafka_producer *
 kafka_producer_new(const char *zkServer)
@@ -60,7 +49,7 @@ kafka_producer_new(const char *zkServer)
 	if (!p)
 		return NULL;
 
-	p->zh = zookeeper_init(zkServer, init_watcher, 10000, &p->cid, p, 0);
+	p->zh = zookeeper_init(zkServer, producer_init_watcher, 10000, &p->cid, p, 0);
 	if (!p->zh) {
 		free(p);
 		return NULL;
@@ -79,15 +68,6 @@ kafka_producer_new(const char *zkServer)
 		return NULL;
 	}
 	return p;
-}
-
-static json_t *
-kp_broker_by_id(struct kafka_producer *p, int id)
-{
-	char buf[33];
-	memset(buf, 0, sizeof buf);
-	snprintf(buf, sizeof buf, "%d", id);
-	return json_object_get(p->brokers, buf);
 }
 
 KAFKA_EXPORT int
@@ -176,75 +156,13 @@ kafka_producer_free(struct kafka_producer *p)
 	free(p);
 }
 
-static void
-init_watcher(zhandle_t *zp, int type, int state, const char *path, void *ctx)
-{
-	(void)path;
-	const clientid_t *id;
-	struct kafka_producer *p = (struct kafka_producer *)ctx;
-
-	if (type == ZOO_SESSION_EVENT) {
-		if (state == ZOO_CONNECTED_STATE) {
-			id = zoo_client_id(zp);
-			if (p->cid.client_id == 0 || p->cid.client_id != id->client_id) {
-				p->cid = *id;
-			}
-	        } else if (state == ZOO_AUTH_FAILED_STATE) {
-			zookeeper_close(zp);
-			p->zh = 0;
-		} else if (state == ZOO_EXPIRED_SESSION_STATE) {
-			zookeeper_close(zp);
-			p->zh = 0;
-		}
-	}
-}
-
-static void
-watch_broker_ids(zhandle_t *zp, int type, int state, const char *path,
-		void *ctx)
-{
-	/**
-	 * re-map brokers
-	 */
-	(void)state;
-	(void)path;
-	struct String_vector ids;
-	struct kafka_producer *p = (struct kafka_producer *)ctx;
-	if (type == ZOO_CHILD_EVENT) {
-		pthread_mutex_lock(&p->mtx);
-		json_decref(p->brokers);
-		zoo_wget_children(zp, "/brokers/ids", watch_broker_ids, p, &ids);
-		p->brokers = broker_map_new(p->zh, &ids);
-		pthread_mutex_unlock(&p->mtx);
-	}
-}
-
-static void
-watch_broker_topics(zhandle_t *zp, int type, int state, const char *path,
-		void *ctx)
-{
-	/**
-	 * re-map topics
-	 */
-	(void)state;
-	(void)path;
-	struct String_vector topics;
-	struct kafka_producer *p = (struct kafka_producer *)ctx;
-	if (type == ZOO_CHILD_EVENT) {
-		pthread_mutex_lock(&p->mtx);
-		json_decref(p->topics);
-		zoo_wget_children(zp, "/brokers/topics", watch_broker_topics, p, &topics);
-		p->topics = topic_map_new(p->zh, &topics);
-		pthread_mutex_unlock(&p->mtx);
-	}
-}
-
 static int
 kp_init_brokers(struct kafka_producer *p)
 {
 	int rc;
 	struct String_vector ids;
-	rc = zoo_wget_children(p->zh, "/brokers/ids", watch_broker_ids, p, &ids);
+	rc = zoo_wget_children(p->zh, "/brokers/ids",
+			producer_watch_broker_ids, p, &ids);
 	if (rc != ZOK || ids.count == 0)
 		return -1;
 	pthread_mutex_lock(&p->mtx);
@@ -260,7 +178,7 @@ kp_init_topics(struct kafka_producer *p)
 	int rc;
 	struct String_vector topics;
 	rc = zoo_wget_children(p->zh, "/brokers/topics",
-			watch_broker_topics, p, &topics);
+			producer_watch_broker_topics, p, &topics);
 	if (rc != ZOK || topics.count == 0)
 		return -1;
 	pthread_mutex_lock(&p->mtx);
@@ -268,4 +186,13 @@ kp_init_topics(struct kafka_producer *p)
 	pthread_mutex_unlock(&p->mtx);
 	free_String_vector(&topics);
 	return 0;
+}
+
+static json_t *
+kp_broker_by_id(struct kafka_producer *p, int id)
+{
+	char buf[33];
+	memset(buf, 0, sizeof buf);
+	snprintf(buf, sizeof buf, "%d", id);
+	return json_object_get(p->brokers, buf);
 }

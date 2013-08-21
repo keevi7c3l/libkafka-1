@@ -26,6 +26,7 @@ libkafka_la_SOURCES = \
 	crc32.c \
 	producer/request.c \
 	producer/producer.c \
+	producer/watchers.c \
 	jansson/dump.c \
 	jansson/error.c \
 	jansson/hashtable.c \
