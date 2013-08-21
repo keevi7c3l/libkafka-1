@@ -92,7 +92,8 @@ typedef struct {
 } produce_request_t;
 
 produce_request_t *produce_request_new(const char *topic, int partition);
-kafka_message_t *kafka_message_new(uint8_t *payload, int32_t length);
+void produce_request_free(produce_request_t *r);
+kafka_message_t *kafka_message_new(const char *str);
 int produce_request_append_message(produce_request_t *req, kafka_message_t *msg);
 uint8_t *produce_request_serialize(produce_request_t *req, uint32_t *outlen);
 

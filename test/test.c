@@ -33,7 +33,7 @@ int main(int argc, char **argv)
 	struct kafka_producer *p;
 	p = kafka_producer_new("ubuntu:2181");
 	if (p) {
-		kafka_producer_send(p, "test", "hello world", strlen("hello world"));
+		kafka_producer_send(p, "test", "hello world");
 		printf("cleaning up\n");
 		kafka_producer_free(p);
 	}

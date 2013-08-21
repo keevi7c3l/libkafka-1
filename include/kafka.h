@@ -36,6 +36,6 @@ int kafka_foo(void);
 struct kafka_producer *kafka_producer_new(const char *zkServer);
 void kafka_producer_free(struct kafka_producer *p);
 int kafka_producer_send(struct kafka_producer *p, const char *topic,
-			uint8_t *payload, int32_t len);
+			const char *payload);
 
 #endif

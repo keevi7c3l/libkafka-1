@@ -94,6 +94,7 @@ produce_request_serialize(produce_request_t *req, uint32_t *outlen)
 	request_message_header_t *h = &req->header;
 	produce_request_header_t *p = &req->pr_header;
 
+	/* TODO: support sending to multiple topics and partitions */
 	int32_t nTopics = 1, nPartitions = 1;
 	h->size += 4 + 4;
 
@@ -151,7 +152,7 @@ produce_request_new(const char *topic, int partition)
 
 	req->pr_header.acks = 1;
 	req->pr_header.ttl = 0xFFFFFFFF;
-	req->pr_header.topic = (char *)topic;
+	req->pr_header.topic = strdup(topic);
 	req->pr_header.partition = partition;
 
 	req->_length = 1;
@@ -166,8 +167,36 @@ produce_request_new(const char *topic, int partition)
 	return req;
 }
 
+static void
+bytestring_free(bytestring_t *s)
+{
+	if (s) {
+		if (s->data)
+			free(s->data);
+		free(s);
+	}
+}
+
+void
+produce_request_free(produce_request_t *r)
+{
+	if (r) {
+		unsigned u;
+		for (u = 0; u < r->_next; u++) {
+			kafka_message_t *m = r->messages[u];
+			bytestring_free(m->key);
+			bytestring_free(m->value);
+			free(r->messages[u]);
+		}
+		free(r->messages);
+		if (r->pr_header.topic)
+			free(r->pr_header.topic);
+		free(r);
+	}
+}
+
 kafka_message_t *
-kafka_message_new(uint8_t *payload, int32_t length)
+kafka_message_new(const char *str)
 {
 	kafka_message_t *msg;
 	msg = calloc(1, sizeof *msg);
@@ -179,9 +208,9 @@ kafka_message_new(uint8_t *payload, int32_t length)
 	msg->size += 4;
 
 	msg->value = calloc(1, sizeof *msg->value);
-	msg->value->len = length;
-	msg->value->data = payload;
-	msg->size += 4 + length;
+	msg->value->len = strlen(str);
+	msg->value->data = strdup(str);
+	msg->size += 4 + msg->value->len;
 	return msg;
 }
 

@@ -92,7 +92,7 @@ kp_broker_by_id(struct kafka_producer *p, int id)
 
 KAFKA_EXPORT int
 kafka_producer_send(struct kafka_producer *p, const char *topic,
-		uint8_t *payload, int32_t len)
+		const char *payload)
 {
 	int part, partBroker;
 	void *iter;
@@ -101,7 +101,7 @@ kafka_producer_send(struct kafka_producer *p, const char *topic,
 
 	CHECK_OBJ_NOTNULL(p, KAFKA_PRODUCER_MAGIC);
 
-	if (len <= 0 || !payload)
+	if (!payload)
 		return -1;
 
 	t = json_object_get(p->topics, topic);
@@ -131,9 +131,10 @@ kafka_producer_send(struct kafka_producer *p, const char *topic,
 		uint8_t *buf;
 
 		req = produce_request_new(topic, part);
-		msg = kafka_message_new(payload, len);
+		msg = kafka_message_new(payload);
 		produce_request_append_message(req, msg);
 		buf = produce_request_serialize(req, &bufsize);
+		produce_request_free(req);
 
 		fd = json_integer_value(json_object_get(broker, "fd"));
 		printf("sending to broker: %s:%d\n",
@@ -170,6 +171,7 @@ kafka_producer_free(struct kafka_producer *p)
 		}
 	}
 	json_decref(p->brokers);
+	json_decref(p->topics);
 	pthread_mutex_destroy(&p->mtx);
 	free(p);
 }
