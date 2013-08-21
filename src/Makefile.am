@@ -23,6 +23,8 @@ libkafka_la_SOURCES = \
 	kafka.c \
 	broker.c \
 	utils.c \
+	crc32.c \
+	producer/request.c \
 	producer/producer.c \
 	jansson/dump.c \
 	jansson/error.c \

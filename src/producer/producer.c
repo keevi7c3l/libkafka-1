@@ -25,6 +25,7 @@
  */
 
 #include <assert.h>
+#include <string.h>
 #include <pthread.h>
 
 #include <zookeeper/zookeeper.h>
@@ -78,6 +79,75 @@ kafka_producer_new(const char *zkServer)
 		return NULL;
 	}
 	return p;
+}
+
+static json_t *
+kp_broker_by_id(struct kafka_producer *p, int id)
+{
+	char buf[33];
+	memset(buf, 0, sizeof buf);
+	snprintf(buf, sizeof buf, "%d", id);
+	return json_object_get(p->brokers, buf);
+}
+
+KAFKA_EXPORT int
+kafka_producer_send(struct kafka_producer *p, const char *topic,
+		uint8_t *payload, int32_t len)
+{
+	int part, partBroker;
+	void *iter;
+	json_t *t, *partitions;
+	json_t *broker;
+
+	CHECK_OBJ_NOTNULL(p, KAFKA_PRODUCER_MAGIC);
+
+	if (len <= 0 || !payload)
+		return -1;
+
+	t = json_object_get(p->topics, topic);
+	if (!t)
+		return -1;
+	partitions = json_object_get(t, "partitions");
+	if (!partitions)
+		return -1;
+
+	iter = json_object_iter(partitions);
+	for (; iter; iter = json_object_iter_next(partitions, iter)) {
+		json_t *list;
+		list = json_object_iter_value(iter);
+		assert(json_array_size(list) > 0);
+		/* get first broker/replica */
+		part = atoi(json_object_iter_key(iter));
+		partBroker = json_integer_value(json_array_get(list, 0));
+		break;
+	}
+
+	broker = kp_broker_by_id(p, partBroker);
+	if (broker) {
+		int fd;
+		produce_request_t *req;
+		kafka_message_t *msg;
+		uint32_t bufsize;
+		uint8_t *buf;
+
+		req = produce_request_new(topic, part);
+		msg = kafka_message_new(payload, len);
+		produce_request_append_message(req, msg);
+		buf = produce_request_serialize(req, &bufsize);
+
+		fd = json_integer_value(json_object_get(broker, "fd"));
+		printf("sending to broker: %s:%d\n",
+			json_string_value(json_object_get(broker, "host")),
+			json_integer_value(json_object_get(broker, "port")));
+		assert(write(fd, buf, bufsize) == bufsize);
+
+		char rbuf[1024];
+		bufsize = read(fd, rbuf, sizeof rbuf);
+		print_bytes(rbuf, bufsize);
+
+		free(buf);
+	}
+	return 0;
 }
 
 KAFKA_EXPORT void

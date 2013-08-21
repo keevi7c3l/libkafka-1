@@ -76,3 +76,12 @@ char *string_builder(const char *fmt, ...)
     }
     return p;
 }
+
+void
+print_bytes(uint8_t *buf, size_t len)
+{
+	uint8_t *ptr = buf;
+	for (; ptr != &buf[len]; ptr++)
+		printf("%02x ", *ptr);
+	printf("\n");
+}
