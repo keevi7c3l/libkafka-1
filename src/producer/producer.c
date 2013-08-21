@@ -137,7 +137,7 @@ kafka_producer_send(struct kafka_producer *p, const char *topic,
 		produce_request_free(req);
 
 		fd = json_integer_value(json_object_get(broker, "fd"));
-		printf("sending to broker: %s:%d\n",
+		printf("sending to broker: %s:%" JSON_INTEGER_FORMAT "\n",
 			json_string_value(json_object_get(broker, "host")),
 			json_integer_value(json_object_get(broker, "port")));
 		assert(write(fd, buf, bufsize) == bufsize);

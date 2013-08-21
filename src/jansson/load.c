@@ -5,7 +5,7 @@
  * it under the terms of the MIT license. See LICENSE for details.
  */
 
-#define _GNU_SOURCE
+/*#define _GNU_SOURCE*/
 #include <errno.h>
 #include <limits.h>
 #include <stdio.h>
