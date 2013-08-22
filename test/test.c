@@ -34,9 +34,9 @@ int main(int argc, char **argv)
 	p = kafka_producer_new("ubuntu:2181");
 	if (p) {
 		while (1) {
-			sleep(1);
+			kafka_producer_send(p, "test", "hello world");
+			sleep(2);
 		}
-		kafka_producer_send(p, "test", "hello world");
 		printf("cleaning up\n");
 		kafka_producer_free(p);
 	}

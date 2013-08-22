@@ -78,7 +78,7 @@ bytestring_pack(bytestring_t *str, uint8_t *ptr)
 	size_t offset = uint32_pack(str->len, ptr);
 	if (str->len > 0) {
 		memcpy(ptr + offset, str->data, str->len);
-		return offset + str->len;
+		offset += str->len;
 	}
 	return offset;
 }
@@ -98,7 +98,7 @@ produce_request_serialize(produce_request_t *req, uint32_t *outlen)
 	int32_t nTopics = 1, nPartitions = 1;
 	h->size += 4 + 4;
 
-	buf = calloc(h->size, 1);
+	buf = calloc(h->size+4, 1);
 	ptr = buf;
 
 	ptr += uint32_pack(h->size, ptr);
@@ -117,12 +117,11 @@ produce_request_serialize(produce_request_t *req, uint32_t *outlen)
 	ptr += uint32_pack(p->message_set_size, ptr);
 
 	for (u = 0; u < req->_next; u++) {
-		uint8_t *cs;
 		kafka_message_t *m = req->messages[u];
 		ptr += uint64_pack(m->offset, ptr);
 		ptr += uint32_pack(m->size, ptr);
 
-		cs = ptr;
+		uint8_t *cs = ptr;
 		ptr += sizeof(int32_t);
 
 		ptr += uint8_pack(m->header.magic, ptr);
@@ -151,7 +150,7 @@ produce_request_new(const char *topic, int partition)
 	req->header.client_id = "foo";
 
 	req->pr_header.acks = 1;
-	req->pr_header.ttl = 0xFFFFFFFF;
+	req->pr_header.ttl = 1500;
 	req->pr_header.topic = strdup(topic);
 	req->pr_header.partition = partition;
 
@@ -211,6 +210,7 @@ kafka_message_new(const char *str)
 	msg->value->len = strlen(str);
 	msg->value->data = strdup(str);
 	msg->size += 4 + msg->value->len;
+
 	return msg;
 }
 

@@ -24,6 +24,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <stdlib.h>
+#include <time.h>
 #include <assert.h>
 #include <string.h>
 #include <pthread.h>
@@ -45,6 +47,8 @@ kafka_producer_new(const char *zkServer)
 {
 	int rc;
 	struct kafka_producer *p;
+
+	srand(time(0));
 
 	p = calloc(1, sizeof *p);
 	if (!p)
@@ -78,16 +82,31 @@ kafka_producer_new(const char *zkServer)
 	return p;
 }
 
+static int
+count_partitions(json_t *partitions)
+{
+	void *iter;
+	int parts = 0;
+	if (!partitions)
+		return -1;
+	iter = json_object_iter(partitions);
+	for (; iter; iter = json_object_iter_next(partitions, iter)) {
+		parts++;
+	}
+	return parts;
+}
+
 KAFKA_EXPORT int
 kafka_producer_send(struct kafka_producer *p, const char *topic,
 		const char *payload)
 {
-	int part, partBroker;
+	int parts, partBroker;
 	void *iter;
-	json_t *t, *partitions;
+	json_t *t, *partition;
 	json_t *broker;
 
 	CHECK_OBJ_NOTNULL(p, KAFKA_PRODUCER_MAGIC);
+	printf("sending to topic: %s\n", topic);
 
 	if (!payload)
 		return -1;
@@ -95,33 +114,30 @@ kafka_producer_send(struct kafka_producer *p, const char *topic,
 	t = json_object_get(p->topics, topic);
 	if (!t)
 		return -1;
-	partitions = json_object_get(t, "partitions");
-	if (!partitions)
-		return -1;
 
-	iter = json_object_iter(partitions);
-	for (; iter; iter = json_object_iter_next(partitions, iter)) {
-		json_t *list;
-		list = json_object_iter_value(iter);
-		assert(json_array_size(list) > 0);
-		/* get first broker/replica */
-		part = atoi(json_object_iter_key(iter));
-		partBroker = json_integer_value(json_array_get(list, 0));
-		break;
-	}
+	char part[33];
+	memset(part, 0, sizeof part);
+	parts = count_partitions(json_object_get(t, "partitions"));
 
+	snprintf(part, sizeof part, "%d", rand() % parts);
+	t = json_object_get(p->topicsPartitions, topic);
+	partition = json_object_get(t, part);
+	partBroker = json_integer_value(json_object_get(partition, "leader"));
+	printf("BrokerId: %d\n", partBroker);
 	broker = kp_broker_by_id(p, partBroker);
+
 	if (broker) {
 		int fd;
-		produce_request_t *req;
-		kafka_message_t *msg;
+		produce_request_t *req = NULL;
+		kafka_message_t *msg = NULL;
 		uint32_t bufsize;
-		uint8_t *buf;
+		uint8_t *buf = NULL;
 
-		req = produce_request_new(topic, part);
+		req = produce_request_new(topic, atoi(part));
 		msg = kafka_message_new(payload);
 		produce_request_append_message(req, msg);
 		buf = produce_request_serialize(req, &bufsize);
+//		print_bytes(buf, bufsize);
 		produce_request_free(req);
 
 		fd = json_integer_value(json_object_get(broker, "fd"));
