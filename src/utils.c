@@ -85,7 +85,7 @@ print_bytes(uint8_t *buf, size_t len)
 {
 	uint8_t *ptr = buf;
 	for (; ptr != &buf[len]; ptr++)
-		printf("%02x ", *ptr);
+		printf("0x%02X ", *ptr);
 	printf("\n");
 }
 

@@ -137,7 +137,7 @@ kafka_producer_send(struct kafka_producer *p, const char *topic,
 		msg = kafka_message_new(payload);
 		produce_request_append_message(req, msg);
 		buf = produce_request_serialize(req, &bufsize);
-//		print_bytes(buf, bufsize);
+		print_bytes(buf, bufsize);
 		produce_request_free(req);
 
 		fd = json_integer_value(json_object_get(broker, "fd"));
