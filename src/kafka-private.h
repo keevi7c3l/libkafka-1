@@ -40,17 +40,25 @@ struct kafka_producer {
 	clientid_t cid;
 	json_t *topics;
         json_t *brokers;
+	json_t *topicsPartitions;
 	pthread_mutex_t mtx;
 };
 
 /* broker.c */
 json_t *broker_map_new(zhandle_t *zh, struct String_vector *v);
 json_t *topic_map_new(zhandle_t *zh, struct String_vector *v);
+json_t *topic_partitions_map_new(struct kafka_producer *p, const char *topic,
+				struct String_vector *v);
+json_t *get_json_from_znode(zhandle_t *zh, const char *znode);
+json_t *wget_json_from_znode(zhandle_t *zh, const char *znode,
+			watcher_fn watcher, void *ctx);
 
 /* utils.c */
 void free_String_vector(struct String_vector *v);
 char *string_builder(const char *fmt, ...);
 void print_bytes(uint8_t *buf, size_t len);
+char *peel_topic(const char *path);
+char *peel_partition(const char *path);
 
 /* crc32.c */
 uint32_t crc32(uint32_t crc, const void *buf, size_t size);
@@ -61,6 +69,8 @@ void producer_init_watcher(zhandle_t *zp, int type, int state,
 void producer_watch_broker_ids(zhandle_t *zp, int type, int state,
 			const char *path, void *ctx);
 void producer_watch_broker_topics(zhandle_t *zp, int type, int state,
+				const char *path, void *ctx);
+void watch_topic_partition_state(zhandle_t *zp, int type, int state,
 				const char *path, void *ctx);
 
 /* producer/request.c */
@@ -113,37 +123,6 @@ void produce_request_free(produce_request_t *r);
 kafka_message_t *kafka_message_new(const char *str);
 int produce_request_append_message(produce_request_t *req, kafka_message_t *msg);
 uint8_t *produce_request_serialize(produce_request_t *req, uint32_t *outlen);
-
-#if 0
-typedef struct {
-    int32_t length;
-    int16_t type;
-    int16_t topic_length;
-    char *topic; /* not null-terminated, only topic_length bytes */
-    int32_t partition;
-} request_header_t;
-
-typedef struct {
-    int32_t length;
-    int8_t magic;
-    int8_t compression;
-    uint32_t checksum;
-    uint8_t *payload;
-} kafka_message_t;
-
-typedef struct {
-    request_header_t *header;
-    int32_t messages_length;
-    kafka_message_t **messages;
-    unsigned _length, _next; /* for managing messages pointers */
-} produce_request_t;
-
-produce_request_t *produce_request_new(const char *topic, int partition);
-kafka_message_t *kafka_message_new(uint8_t *payload, int32_t length);
-void kafka_message_free(kafka_message_t *msg);
-int produce_request_append_message(produce_request_t *req, kafka_message_t *msg);
-uint8_t *produce_request_serialize(produce_request_t *req, uint32_t *outlen);
-#endif
 
 /**
  * OBJ stuff taken from miniobj.h in Varnish. Written by PHK.

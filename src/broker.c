@@ -75,20 +75,42 @@ broker_connect(json_t *broker)
 	return fd;
 }
 
-static json_t *
+json_t *
 get_json_from_znode(zhandle_t *zh, const char *znode)
 {
 	int rc;
-	json_t *js;
+	json_t *js = NULL;
 	json_error_t err;
 	char buf[1024];
 	int len = sizeof buf;
 	memset(buf, 0, len);
 	rc = zoo_get(zh, znode, 0, buf, &len, NULL);
 	assert((size_t)len < sizeof buf);
-	if (rc != ZOK)
-		return NULL;
-	return json_loads(buf, 0, &err);
+	if (rc == ZOK) {
+		js = json_loads(buf, 0, &err);
+	}
+	return js;
+}
+
+json_t *
+wget_json_from_znode(zhandle_t *zh, const char *znode, watcher_fn watcher,
+		void *ctx)
+{
+	/**
+	 * watcher gets triggered when the znode's underlying data changes.
+	 */
+	int rc;
+	json_t *js = NULL;
+	json_error_t err;
+	char buf[1024];
+	int len = sizeof buf;
+	memset(buf, 0, len);
+	rc = zoo_wget(zh, znode, watcher, ctx, buf, &len, NULL);
+	assert((size_t)len < sizeof buf);
+	if (rc == ZOK) {
+		js = json_loads(buf, 0, &err);
+	}
+	return js;
 }
 
 json_t *
@@ -107,13 +129,14 @@ broker_map_new(zhandle_t *zh, struct String_vector *v)
 		broker = get_json_from_znode(zh, znode);
 		free(znode);
 
-		if (!broker)
-			continue;
-
-		fd = broker_connect(broker);
-		if (fd != -1) {
-			json_object_set(broker, "fd", json_integer(fd));
-			json_object_set(out, v->data[i], broker);
+		if (broker) {
+			fd = broker_connect(broker);
+			if (fd != -1) {
+				json_object_set(broker, "fd", json_integer(fd));
+				json_object_set(out, v->data[i], broker);
+			} else {
+				json_decref(broker);
+			}
 		}
 	}
 	return out;
@@ -134,10 +157,31 @@ topic_map_new(zhandle_t *zh, struct String_vector *v)
 		topic = get_json_from_znode(zh, znode);
 		free(znode);
 
-		if (!topic)
-			continue;
+		if (topic) {
+			json_object_set(out, v->data[i], topic);
+		}
+	}
+	return out;
+}
 
-		json_object_set(out, v->data[i], topic);
+json_t *
+topic_partitions_map_new(struct kafka_producer *p, const char *topic,
+			struct String_vector *v)
+{
+	int i, rc;
+	json_t *out = json_object();
+	for (i = 0; i < v->count; i++) {
+		char *znode;
+		json_t *state;
+		znode = string_builder("/brokers/topics/%s/partitions/%s/state",
+				topic, v->data[i]);
+		assert(znode);
+		state = wget_json_from_znode(p->zh, znode,
+					watch_topic_partition_state, p);
+		if (state) {
+			json_object_set(out, v->data[i], state);
+		}
+		free(znode);
 	}
 	return out;
 }

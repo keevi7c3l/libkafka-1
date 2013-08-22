@@ -37,6 +37,7 @@
 
 static int kp_init_brokers(struct kafka_producer *p);
 static int kp_init_topics(struct kafka_producer *p);
+static int kp_init_topics_partitions(struct kafka_producer *p);
 static json_t *kp_broker_by_id(struct kafka_producer *p, int id);
 
 KAFKA_EXPORT struct kafka_producer *
@@ -49,6 +50,7 @@ kafka_producer_new(const char *zkServer)
 	if (!p)
 		return NULL;
 
+	zoo_set_debug_level(ZOO_LOG_LEVEL_WARN);
 	p->zh = zookeeper_init(zkServer, producer_init_watcher, 10000, &p->cid, p, 0);
 	if (!p->zh) {
 		free(p);
@@ -59,14 +61,20 @@ kafka_producer_new(const char *zkServer)
 	pthread_mutex_init(&p->mtx, NULL);
 
 	if (kp_init_brokers(p) == -1) {
-		free(p);
+		kafka_producer_free(p);
 		return NULL;
 	}
 
 	if (kp_init_topics(p) == -1) {
-		free(p);
+		kafka_producer_free(p);
 		return NULL;
 	}
+
+	if (kp_init_topics_partitions(p) == -1) {
+		kafka_producer_free(p);
+		return NULL;
+	}
+
 	return p;
 }
 
@@ -185,6 +193,36 @@ kp_init_topics(struct kafka_producer *p)
 	p->topics = topic_map_new(p->zh, &topics);
 	pthread_mutex_unlock(&p->mtx);
 	free_String_vector(&topics);
+	return 0;
+}
+
+static int
+kp_init_topics_partitions(struct kafka_producer *p)
+{
+	int rc;
+	void *iter;
+	struct String_vector v;
+
+	pthread_mutex_lock(&p->mtx);
+	if (p->topicsPartitions)
+		json_decref(p->topicsPartitions);
+
+	p->topicsPartitions = json_object();
+	iter = json_object_iter(p->topics);
+
+	for (; iter; iter = json_object_iter_next(p->topics, iter)) {
+		char *path;
+		const char *topic = json_object_iter_key(iter);
+		path = string_builder("/brokers/topics/%s/partitions", topic);
+		/* TODO: figure out if I should watch this znode */
+		rc = zoo_get_children(p->zh, path, 0, &v);
+		free(path);
+		if (rc == ZOK) {
+			json_t *partitions = topic_partitions_map_new(p, topic, &v);
+			json_object_set(p->topicsPartitions, topic, partitions);
+		}
+	}
+	pthread_mutex_unlock(&p->mtx);
 	return 0;
 }
 

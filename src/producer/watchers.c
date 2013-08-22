@@ -64,7 +64,9 @@ producer_watch_broker_ids(zhandle_t *zp, int type, int state, const char *path,
 	struct kafka_producer *p = (struct kafka_producer *)ctx;
 	if (type == ZOO_CHILD_EVENT) {
 		pthread_mutex_lock(&p->mtx);
-		json_decref(p->brokers);
+		if (p->brokers) {
+			json_decref(p->brokers);
+		}
 		zoo_wget_children(zp, "/brokers/ids",
 				producer_watch_broker_ids, p, &ids);
 		p->brokers = broker_map_new(p->zh, &ids);
@@ -85,10 +87,51 @@ producer_watch_broker_topics(zhandle_t *zp, int type, int state,
 	struct kafka_producer *p = (struct kafka_producer *)ctx;
 	if (type == ZOO_CHILD_EVENT) {
 		pthread_mutex_lock(&p->mtx);
-		json_decref(p->topics);
+		if (p->topics) {
+			json_decref(p->topics);
+		}
 		zoo_wget_children(zp, "/brokers/topics",
 				producer_watch_broker_topics, p, &topics);
 		p->topics = topic_map_new(p->zh, &topics);
 		pthread_mutex_unlock(&p->mtx);
+	}
+}
+
+void watch_topic_partition_state(zhandle_t *zp, int type, int state,
+				const char *path, void *ctx)
+{
+	(void)state;
+	struct kafka_producer *p = (struct kafka_producer *)ctx;
+	if (type == ZOO_CHANGED_EVENT) {
+		char *topic;
+		char *partition;
+		json_t *t, *state;
+		topic = peel_topic(path);
+		if (!topic) {
+			return;
+		}
+		partition = peel_partition(path);
+		if (!partition) {
+			free(topic);
+			return;
+		}
+
+		pthread_mutex_lock(&p->mtx);
+
+		t = json_object_get(p->topicsPartitions, topic);
+		if (t) {
+			state = wget_json_from_znode(zp, path,
+						watch_topic_partition_state, p);
+
+			json_t *part = json_object_get(t, partition);
+			if (state) {
+				json_object_set(t, partition, state);
+			}
+		}
+
+		pthread_mutex_unlock(&p->mtx);
+
+		free(topic);
+		free(partition);
 	}
 }
