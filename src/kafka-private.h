@@ -125,6 +125,10 @@ void watch_topic_partition_state(zhandle_t *zp, int type, int state,
 enum {PRODUCE=0, FETCH=1, MULTIFETCH=2, MULTIPRODUCE=3, OFFSETS=4};
 
 /*
+ * [(topic, (partition, messages), (topic, (partition, messages)))]
+ */
+
+/*
  * {
  *     "metadata": { "topics": 2 },
  *     "foo_topic": {
