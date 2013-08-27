@@ -24,25 +24,49 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _LIBKAFKA_H_
-#define _LIBKAFKA_H_
+#include <stdlib.h>
+#include <string.h>
+#include <kafka.h>
+#include "kafka-private.h"
 
-#include <stdint.h>
+static void bytestring_free(bytestring_t *s)
+{
+	if (s) {
+		if (s->data)
+			free(s->data);
+		free(s);
+	}
+}
 
-struct kafka_producer;
-struct kafka_message;
+KAFKA_EXPORT struct kafka_message *
+kafka_message_new(const char *topic, const char *key, const char *value)
+{
+	struct kafka_message *msg;
+	if (!topic)
+		return NULL;
+	if (!value)
+		return NULL;
+	msg = calloc(1, sizeof *msg);
+	msg->key = calloc(1, sizeof *msg->key);
+	msg->key->len = -1;
+	if (key) {
+		msg->key->len = strlen(key);
+		msg->key->data = strdup(key);
+	}
+	msg->value = calloc(1, sizeof *msg->value);
+	msg->value->len = strlen(value);
+	msg->value->data = strdup(value);
+	msg->topic = strdup(topic);
+	return msg;
+}
 
-/* kafka.c */
-int kafka_foo(void);
-
-/* producer/producer.c */
-struct kafka_producer *kafka_producer_new(const char *zkServer);
-void kafka_producer_free(struct kafka_producer *p);
-int kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg);
-
-/* message.c */
-struct kafka_message *kafka_message_new(const char *topic, const char *key,
-					const char *value);
-void kafka_message_free(struct kafka_message *msg);
-
-#endif
+KAFKA_EXPORT void
+kafka_message_free(struct kafka_message *msg)
+{
+	if (msg) {
+		bytestring_free(msg->key);
+		bytestring_free(msg->value);
+		if (msg->topic)
+			free(msg->topic);
+	}
+}

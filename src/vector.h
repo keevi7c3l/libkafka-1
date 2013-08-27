@@ -24,25 +24,21 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _LIBKAFKA_H_
-#define _LIBKAFKA_H_
+#ifndef VECTOR_H
+#define VECTOR_H
 
-#include <stdint.h>
+struct vector;
 
-struct kafka_producer;
-struct kafka_message;
+typedef void (*vector_free_fn)(void *ptr);
 
-/* kafka.c */
-int kafka_foo(void);
-
-/* producer/producer.c */
-struct kafka_producer *kafka_producer_new(const char *zkServer);
-void kafka_producer_free(struct kafka_producer *p);
-int kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg);
-
-/* message.c */
-struct kafka_message *kafka_message_new(const char *topic, const char *key,
-					const char *value);
-void kafka_message_free(struct kafka_message *msg);
+struct vector *vector_new(unsigned size, vector_free_fn free_fn);
+void vector_free(struct vector *v);
+void vector_push_back(struct vector *v, void *ptr);
+void *vector_pop_back(struct vector *v);
+void *vector_front(struct vector *v);
+void *vector_back(struct vector *v);
+void *vector_at(struct vector *v, unsigned u);
+int vector_empty(struct vector *v);
+void vector_erase(struct vector *v, unsigned u);
 
 #endif

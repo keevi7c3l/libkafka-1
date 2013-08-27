@@ -76,7 +76,6 @@ int jsonp_strtod(strbuffer_t *strbuffer, double *out)
 int jsonp_dtostr(char *buffer, size_t size, double value)
 {
     int ret;
-    char *start, *end;
     size_t length;
 
     ret = snprintf(buffer, size, "%.17g", value);
@@ -96,33 +95,13 @@ int jsonp_dtostr(char *buffer, size_t size, double value)
     if(strchr(buffer, '.') == NULL &&
        strchr(buffer, 'e') == NULL)
     {
-        if(length + 3 >= size) {
+        if(length + 2 >= size) {
             /* No space to append ".0" */
             return -1;
         }
         buffer[length] = '.';
         buffer[length + 1] = '0';
-        buffer[length + 2] = '\0';
         length += 2;
-    }
-
-    /* Remove leading '+' from positive exponent. Also remove leading
-       zeros from exponents (added by some printf() implementations) */
-    start = strchr(buffer, 'e');
-    if(start) {
-        start++;
-        end = start + 1;
-
-        if(*start == '-')
-            start++;
-
-        while(*end == '0')
-            end++;
-
-        if(end != start) {
-            memmove(start, end, length - (size_t)(end - buffer));
-            length -= (size_t)(end - start);
-        }
     }
 
     return (int)length;

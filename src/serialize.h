@@ -24,25 +24,19 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _LIBKAFKA_H_
-#define _LIBKAFKA_H_
+#ifndef _LIBKAFKA_SERIALIZE_H_
+#define _LIBKAFKA_SERIALIZE_H_
 
 #include <stdint.h>
+#include "kafka-private.h"
 
-struct kafka_producer;
-struct kafka_message;
+inline size_t uint8_pack(uint8_t value, uint8_t *ptr);
+inline size_t uint16_pack(uint16_t value, uint8_t *ptr);
+inline size_t uint32_pack(uint32_t value, uint8_t *ptr);
+inline size_t uint64_pack(uint64_t value, uint8_t *ptr);
+inline size_t string_pack(const char *str, uint8_t *ptr);
+inline size_t bytestring_pack(bytestring_t *str, uint8_t *ptr);
 
-/* kafka.c */
-int kafka_foo(void);
-
-/* producer/producer.c */
-struct kafka_producer *kafka_producer_new(const char *zkServer);
-void kafka_producer_free(struct kafka_producer *p);
-int kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg);
-
-/* message.c */
-struct kafka_message *kafka_message_new(const char *topic, const char *key,
-					const char *value);
-void kafka_message_free(struct kafka_message *msg);
+int32_t kafka_message_serialize(struct kafka_message *m, uint8_t **out);
 
 #endif

@@ -29,9 +29,17 @@
 
 #include <stdint.h>
 #include <zookeeper/zookeeper.h>
+
+#include "vector.h"
 #include "jansson/jansson.h"
+#include "jansson/hashtable.h"
 
 #define KAFKA_EXPORT __attribute__((visibility("default")))
+
+typedef struct {
+	int32_t len;
+	uint8_t *data;
+} bytestring_t;
 
 struct kafka_producer {
 	unsigned magic;
@@ -44,6 +52,43 @@ struct kafka_producer {
 	pthread_mutex_t mtx;
 };
 
+typedef struct {
+	int64_t offset;
+	int32_t size;
+	int32_t crc;
+	int8_t magic;
+	int8_t attrs;
+} __attribute__((packed)) message_header_t;
+
+typedef struct {
+	int32_t size;
+	int16_t apikey;
+	int16_t apiversion;
+	int32_t correlation_id;
+} __attribute__((packed)) request_message_header_t;
+
+typedef struct {
+	int32_t partition;
+	struct vector *buffers;
+} partition_messages_t;
+
+typedef struct {
+	char *topic;
+	struct vector *partitions;
+} topic_partitions_t;
+
+typedef struct {
+	int16_t acks;
+	int32_t ttl;
+	struct vector *topics_partitions;
+} produce_request_t;
+
+struct kafka_message {
+	char *topic;
+	bytestring_t *key;
+	bytestring_t *value;
+};
+
 /* broker.c */
 json_t *broker_map_new(zhandle_t *zh, struct String_vector *v);
 json_t *topic_map_new(zhandle_t *zh, struct String_vector *v);
@@ -54,6 +99,9 @@ json_t *wget_json_from_znode(zhandle_t *zh, const char *znode,
 			watcher_fn watcher, void *ctx);
 
 /* utils.c */
+size_t jenkins(const void *key);
+int keycmp(const void *a, const void *b);
+
 void free_String_vector(struct String_vector *v);
 char *string_builder(const char *fmt, ...);
 void print_bytes(uint8_t *buf, size_t len);
@@ -76,52 +124,33 @@ void watch_topic_partition_state(zhandle_t *zp, int type, int state,
 /* producer/request.c */
 enum {PRODUCE=0, FETCH=1, MULTIFETCH=2, MULTIPRODUCE=3, OFFSETS=4};
 
-typedef struct {
-	int32_t len;
-	uint8_t *data;
-} bytestring_t;
+/*
+ * {
+ *     "metadata": { "topics": 2 },
+ *     "foo_topic": {
+ *         "metadata": { "partitions": 2 },
+ *         "partition_0": [
+ *             { msg 1 },
+ *             { msg 2},
+ *         ],
+ *         "partition_1": [
+ *             { msg 3 }
+ *         ]
+ *     },
+ *     "bar_topic": {
+ *         "metadata": { "partitions": 1 },
+ *         "partition_1": [
+ *             { msg 4 }
+ *         ]
+ *     }
+ * }
+ */
 
-typedef struct {
-	int32_t size;
-	int16_t apikey;
-	int16_t apiversion;
-	int32_t correlation_id;
-	char *client_id;
-} request_message_header_t;
-
-typedef struct {
-	int32_t checksum;
-	int8_t magic;
-	int8_t attrs;
-} __attribute__((packed)) kafka_message_header_t;
-
-typedef struct {
-	int64_t offset;
-	int32_t size;
-	kafka_message_header_t header;
-	bytestring_t *key;
-	bytestring_t *value;
-} kafka_message_t;
-
-typedef struct {
-	int16_t acks;
-	int32_t ttl;
-	char *topic;
-	int32_t partition;
-	int32_t message_set_size;
-} produce_request_header_t;
-
-typedef struct {
-	request_message_header_t header;
-	produce_request_header_t pr_header;
-	kafka_message_t **messages;
-	unsigned _length, _next;
-} produce_request_t;
-
-produce_request_t *produce_request_new(const char *topic, int partition);
+produce_request_t *produce_request_new(void);
 void produce_request_free(produce_request_t *r);
-kafka_message_t *kafka_message_new(const char *str);
-int produce_request_append_message(produce_request_t *req, kafka_message_t *msg);
+int produce_request_append(struct kafka_producer *p, produce_request_t *req,
+			struct kafka_message *msg);
+//int produce_request_append_message(produce_request_t *req, kafka_message_t *msg);
 uint8_t *produce_request_serialize(produce_request_t *req, uint32_t *outlen);
 
 /**

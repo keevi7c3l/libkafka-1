@@ -143,3 +143,28 @@ peel_partition(const char *path)
 err:
 	return id;
 }
+
+size_t
+jenkins(const void *key)
+{
+    size_t hash, i;
+    const char *k = (const char *)key;
+    size_t len = strlen(k);
+    for (hash = i = 0; i < len; i++) {
+        hash += k[i];
+        hash += (hash << 10);
+        hash ^= (hash >> 6);
+    }
+    hash += (hash << 3);
+    hash ^= (hash >> 11);
+    hash += (hash << 15);
+    return hash;
+}
+
+int
+keycmp(const void *a, const void *b)
+{
+	const char **aa = (const char **)a;
+	const char **bb = (const char **)b;
+	return strcmp(*aa, *bb) == 0;
+}

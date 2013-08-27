@@ -5,6 +5,9 @@ global:
         kafka_producer_free;
         kafka_producer_send;
 
+        kafka_message_new;
+        kafka_message_free;
+
 local:
         *;
 };

@@ -1,25 +1,49 @@
-Apache Kafka Wire Protocol
-==========================
+#+TITLE: Apache Kafka v0.8 Wire Protocol
+#+KEYWORDS: apache, kafka, protocol
+#+DESCRIPTION: Documenting the Apache Kafka version 0.8 Wire Protocol
+#+AUTHOR: David Reynolds
+#+EMAIL: david@alwaysmovefast.com
+#+OPTIONS: creator:nil author:nil num:nil toc:1 ^:nil timestamp:nil
+#+STYLE: <style type="text/css">
+#+STYLE: html {font: 14px Arial, Helvetica, Verdana, sans-serif;}
+#+STYLE: body {width: 700px; background-color: #eee;}
+#+STYLE: #content {padding: 10px; border: 1px solid #ccd; background-color: #fcfcfc;}
+#+STYLE: div.article-body {background-color: #efefef; border: 1px solid #aab; padding: 0px 10px; margin: 0;}
+#+STYLE: a {text-decoration: none;}
+#+STYLE: </style>
 
-Protocol Primitive Types
-------------------------
+by David Reynolds on August 22, 2013
 
-https://cwiki.apache.org/confluence/display/KAFKA/A+Guide+To+The+Kafka+Protocol#AGuideToTheKafkaProtocol-ProtocolPrimitiveTypes
+This is a work in progress. The [[https://cwiki.apache.org/confluence/display/KAFKA/A+Guide+To+The+Kafka+Protocol][Kafka v0.8 Protocol Documentation]] is a good
+place to start. For my work on libkafka I need more in-depth docs that have
+actual packet formats and examples. This is my attempt at documenting what I
+find.
 
-Request/Response Prefix
------------------------
+* Protocol Primitive Types
 
-    SIZE int32
+[[https://cwiki.apache.org/confluence/display/KAFKA/A+Guide+To+The+Kafka+Protocol#AGuideToTheKafkaProtocol-ProtocolPrimitiveTypes][Kafka Protocol Primitive Types]]
 
-Each request and response is prefixed by the size of the request.
+* Request/Response Prefix
 
-Request Header
---------------
+Each request and response is prefixed by the size of the request, not counting this field.
 
-    API KEY        int16
-    API VERSION    int16
-    CORRELATION ID int32
-    CLIENT ID      string
+#+BEGIN_SRC c
+SIZE int32
+
+ 0             1               2               3               4
+ 0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                             SIZE                              |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+#+END_SRC
+
+* Request Header Format
+
+#+BEGIN_SRC c
+API KEY        int16
+API VERSION    int16
+CORRELATION ID int32
+CLIENT ID      string
 
  0             1               2               3               4
  0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7
@@ -32,18 +56,41 @@ Request Header
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+                               /
 /                       CLIENT ID (cont'd)                      /
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+#+END_SRC
 
-Produce Request
----------------
+* Produce Request Format
 
-    REQUIRED ACKS    int16
-    TIMEOUT          int32
-    NUM TOPICS       int32
-    TOPIC            string
-    NUM PARTITIONS   int32
-    PARTITION        int32
-    MESSAGE SET SIZE int32
-    MESSAGE SET      A Message Set is a sequence of Messages.
+This structure lets you nest messages according to topics and partitions.
+Since a producer might have messages attached to it that need to be sent to
+multiple brokers, I think they are nested/grouped by broker. So you have
+something like:
+
+broker 0
+- topic "foo"
+  - partition 0
+    - message 1
+    - message 2
+  - partition 1
+    - message 3
+- topic "bar"
+  - partition 0
+    - message 4
+    - message 5
+broker 1
+- topic "test"
+  - partition 1
+    - message 6
+    - message 7
+
+#+BEGIN_SRC c
+REQUIRED ACKS    int16
+TIMEOUT          int32
+NUM TOPICS       int32
+TOPIC            string
+NUM PARTITIONS   int32
+PARTITION        int32
+MESSAGE SET SIZE int32
+MESSAGE SET      A Message Set is a sequence of Messages.
 
  0             1               2               3               4
  0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7
@@ -68,17 +115,18 @@ Produce Request
 /                          MESSAGE SET                          /
 /                                                               /
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+#+END_SRC
 
-Message
--------
+* Message Format
 
-    OFFSET       int64
-    MESSAGE SIZE int32
-    CRC          int32
-    MAGIC        int8
-    ATTRIBUTES   int8
-    KEY          byte string
-    VALUE        byte string
+#+BEGIN_SRC c
+OFFSET       int64
+MESSAGE SIZE int32
+CRC          int32
+MAGIC        int8
+ATTRIBUTES   int8
+KEY          byte string
+VALUE        byte string
 
 Keys are optional. A key length of -1 indicates a NULL key.
 
@@ -105,49 +153,52 @@ Keys are optional. A key length of -1 indicates a NULL key.
 /                             VALUE                             /
 /                                                               /
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+#+END_SRC
 
-Produce Request Example
------------------------
+* Produce Request Example
 
-    size: 78 (0x00 0x00 0x00 0x4E)
+#+BEGIN_SRC c
+size: 78 (0x00 0x00 0x00 0x4E)
+#+END_SRC
 
-REQUEST HEADER
---------------
+** Request Header
 
-    api key:        0     (0x00 0x00)
-    api version:    0     (0x00 0x00)
-    correlation id: 1     (0x00 0x00 0x00 0x01)
-    client id:      "foo" (0x00 0x03 0x66 0x6F 0x6F)
+#+BEGIN_SRC c
+api key:        0     (0x00 0x00)
+api version:    0     (0x00 0x00)
+correlation id: 1     (0x00 0x00 0x00 0x01)
+client id:      "foo" (0x00 0x03 0x66 0x6F 0x6F)
+#+END_SRC
 
-PRODUCE REQUEST
----------------
+** Produce Request
 
-    required acks:    1      (0x00 0x01)
-    timeout:          1500   (0x00 0x00 0x05 0xDC)
-    num topics:       1      (0x00 0x00 0x00 0x01)
-    topic:            "test" (0x00 0x04 0x74 0x65 0x73 0x74)
-    num partitions:   1      (0x00 0x00 0x00 0x01)
-    partition:        0      (0x00 0x00 0x00 0x00)
-    message set size: 37     (0x00 0x00 0x00 0x25)
+#+BEGIN_SRC c
+required acks:    1      (0x00 0x01)
+timeout:          1500   (0x00 0x00 0x05 0xDC)
+num topics:       1      (0x00 0x00 0x00 0x01)
+topic:            "test" (0x00 0x04 0x74 0x65 0x73 0x74)
+num partitions:   1      (0x00 0x00 0x00 0x01)
+partition:        0      (0x00 0x00 0x00 0x00)
+message set size: 37     (0x00 0x00 0x00 0x25)
+#+END_SRC
 
-MESSAGE SET
------------
+** Message Set
 
-    Message #1:
+*** Message #1
 
-        offset:     0  (0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00)
-        size:       25 (0x00 0x00 0x00 0x19)
-        crc:        0x73 0xAC 0xF7 0x7C
-        magic:      0 (0x00)
-        attributes: 0 (0x00)
-        key:        NULL (0xFF 0xFF 0xFF 0xFF)
-        value:      "hello world" (0x00 0x00 0x00 0x0B
-                                   0x68 0x65 0x6C 0x6C 0x6F 0x20
-                                   0x77 0x6F 0x72 0x6C 0x64)
+#+BEGIN_SRC c
+offset:     0  (0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00)
+size:       25 (0x00 0x00 0x00 0x19)
+crc:        0x73 0xAC 0xF7 0x7C
+magic:      0 (0x00)
+attributes: 0 (0x00)
+key:        NULL (0xFF 0xFF 0xFF 0xFF)
+value:      "hello world" (0x00 0x00 0x00 0x0B 0x68 0x65 0x6C 0x6C 0x6F 0x20 0x77 0x6F 0x72 0x6C 0x64)
+#+END_SRC
 
-Hex Dump
---------
+** Hex Dump
 
+#+BEGIN_SRC c
 0x00 0x00 0x00 0x4E 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x01
 0x00 0x03 0x66 0x6F 0x6F 0x00 0x01 0x00 0x00 0x05 0xDC 0x00
 0x00 0x00 0x01 0x00 0x04 0x74 0x65 0x73 0x74 0x00 0x00 0x00
@@ -155,3 +206,4 @@ Hex Dump
 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x19 0x73 0xAC 0xF7
 0x7C 0x00 0x00 0xFF 0xFF 0xFF 0xFF 0x00 0x00 0x00 0x0B 0x68
 0x65 0x6C 0x6C 0x6F 0x20 0x77 0x6F 0x72 0x6C 0x64
+#+END_SRC

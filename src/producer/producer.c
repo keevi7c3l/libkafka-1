@@ -78,11 +78,10 @@ kafka_producer_new(const char *zkServer)
 		kafka_producer_free(p);
 		return NULL;
 	}
-
 	return p;
 }
 
-static int
+static int32_t
 count_partitions(json_t *partitions)
 {
 	void *iter;
@@ -96,62 +95,197 @@ count_partitions(json_t *partitions)
 	return parts;
 }
 
-KAFKA_EXPORT int
-kafka_producer_send(struct kafka_producer *p, const char *topic,
-		const char *payload)
+static int32_t
+pick_random_partition(struct kafka_producer *p, struct kafka_message *msg)
 {
-	int parts, partBroker;
-	void *iter;
-	json_t *t, *partition;
-	json_t *broker;
-
-	CHECK_OBJ_NOTNULL(p, KAFKA_PRODUCER_MAGIC);
-	printf("sending to topic: %s\n", topic);
-
-	if (!payload)
+	int32_t n;
+	json_t *topic, *partitions;
+	topic = json_object_get(p->topics, msg->topic);
+	if (!topic)
 		return -1;
+	partitions = json_object_get(topic, "partitions");
+	if (!partitions)
+		return -1;
+	n = count_partitions(partitions);
+	if (n <= 0)
+		return -1;
+	return rand() % n;
+}
 
-	t = json_object_get(p->topics, topic);
+static int
+send_request(struct kafka_producer *p, json_t *broker, produce_request_t *req)
+{
+	int i, j, vlen;
+	unsigned u, v;
+	struct iovec *iov;
+	size_t len;
+	uint8_t *buf, *ptr;
+	request_message_header_t header;
+	memset(&header, 0, sizeof header);
+
+	vlen = 16;
+	iov = calloc(vlen, sizeof *iov);
+	i = 1; /* v[0] is reserved for request header */
+
+	/* header.size gets updated at the end */
+	header.size = 2 + 2 + 4; /* apikey + apiversion + correlation_id */
+	header.apikey = PRODUCE;
+	header.apiversion = 0;
+	header.correlation_id = 1;
+
+	const char *client = "foo";
+
+	len = sizeof header;
+	len += 2 + strlen(client);
+	len += 2 + 4 + 4; /* acks, ttl, topics */
+
+	buf = calloc(len, 1);
+	ptr = buf;
+
+	ptr += uint16_pack(req->acks, ptr);
+	ptr += uint32_pack(req->ttl, ptr);
+	ptr += uint32_pack(vector_size(req->topics_partitions), ptr);
+	iov[i].iov_base = buf;
+	iov[i].iov_len = ptr - buf;
+	i++;
+
+	for (u = 0; u < vector_size(req->topics_partitions); u++) {
+		size_t topicLen;
+		uint8_t *topicBuf;
+		topic_partitions_t *topic;
+		topic = vector_at(req->topics_partitions, u);
+
+		/* prefix, str, sizeof num partitions */
+		topicLen = 2 + strlen(topic->topic) + 4;
+		topicBuf = calloc(topicLen, 1);
+
+		ptr = topicBuf;
+		ptr += string_pack(topic->topic, ptr);
+		ptr += uint32_pack(vector_size(topic->partitions), ptr); /* write num partitions */
+
+		iov[i].iov_base = topicBuf;
+		iov[i].iov_len = ptr - topicBuf;
+		i++;
+
+		for (v = 0; v < vector_size(topic->partitions); v++) {
+			unsigned w;
+			int32_t msg_set_size = 0;
+			size_t partLen, msgLen;
+			uint8_t *partBuf, *msgBuf;
+			partition_messages_t *partition = vector_at(topic->partitions, v);
+			partLen = 4 + 4; /* partition, message set size */
+			j = i++; /* maintain pointer to this header */
+
+			/* each message in the partition */
+			for (w = 0; w < vector_size(partition->buffers); w++) {
+				bytestring_t *bstr = vector_at(partition->buffers, w);
+				msg_set_size += bstr->len;
+				iov[i].iov_base = bstr->data;
+				iov[i].iov_len = bstr->len;
+				i++;
+			}
+
+			iov[j].iov_base = calloc(partLen, 1);
+			void *pp = iov[j].iov_base;
+			pp += uint32_pack(partition->partition, pp);
+			pp += uint32_pack(msg_set_size, pp);
+			iov[j].iov_len = pp - iov[j].iov_base;
+		}
+	}
+
+	unsigned uu;
+	void *pp;
+	for (j = 1; j < i; j++) {
+		header.size += iov[j].iov_len;
+	}
+	header.size += 2 + strlen(client);
+	iov[0].iov_base = calloc(1, sizeof(request_message_header_t) + 2 + strlen(client));
+	pp = iov[0].iov_base;
+	pp += uint32_pack(header.size, pp);
+	pp += uint16_pack(header.apikey, pp);
+	pp += uint16_pack(header.apiversion, pp);
+	pp += uint32_pack(header.correlation_id, pp);
+	pp += string_pack(client, pp);
+	iov[0].iov_len = pp - iov[0].iov_base;
+
+	int fd;
+	fd = json_integer_value(json_object_get(broker, "fd"));
+	printf("sending to broker: %s:%" JSON_INTEGER_FORMAT "\n",
+		json_string_value(json_object_get(broker, "host")),
+		json_integer_value(json_object_get(broker, "port")));
+
+	for (j = 0; j < i; j++) {
+		int k;
+		ptr = iov[j].iov_base;
+		for (k = 0; k < iov[j].iov_len; k++, ptr++)
+			printf("0x%02X ", *ptr);
+	}
+	printf("\n");
+
+	assert(writev(fd, iov, i) == header.size + 4);
+
+	for (j = 0; j < i; j++)
+		free(iov[j].iov_base);
+	free(iov);
+
+
+	char rbuf[1024];
+	size_t bufsize;
+	bufsize = read(fd, rbuf, sizeof rbuf);
+	printf("received:\n");
+	print_bytes(rbuf, bufsize);
+}
+
+KAFKA_EXPORT int
+kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg)
+{
+	produce_request_t *req;
+	topic_partitions_t *topic;
+	partition_messages_t *part;
+	CHECK_OBJ_NOTNULL(p, KAFKA_PRODUCER_MAGIC);
+
+	/**
+	 * (for many messages)
+	 * for each message:
+	 *   pick broker(msg) // need to know topic-partition
+	 *   get request object for broker
+	 *   serialize message into that request object
+	 */
+
+	char partStr[33];
+	memset(partStr, 0, sizeof partStr);
+	int32_t topic_partition = pick_random_partition(p, msg);
+	snprintf(partStr, sizeof partStr, "%d", topic_partition);
+	json_t *t = json_object_get(p->topicsPartitions, msg->topic);
 	if (!t)
 		return -1;
+	json_t *partition = json_object_get(t, partStr);
+	int brokerId = json_integer_value(json_object_get(partition, "leader"));
+	printf("BrokerId: %d\n", brokerId);
+	json_t *broker = kp_broker_by_id(p, brokerId);
+	if (!broker)
+		return -1;
+	req = produce_request_new();
 
-	char part[33];
-	memset(part, 0, sizeof part);
-	parts = count_partitions(json_object_get(t, "partitions"));
+	topic = calloc(1, sizeof *topic);
+	topic->topic = msg->topic;
+	topic->partitions = vector_new(1, NULL);
 
-	snprintf(part, sizeof part, "%d", rand() % parts);
-	t = json_object_get(p->topicsPartitions, topic);
-	partition = json_object_get(t, part);
-	partBroker = json_integer_value(json_object_get(partition, "leader"));
-	printf("BrokerId: %d\n", partBroker);
-	broker = kp_broker_by_id(p, partBroker);
+	part = calloc(1, sizeof *part);
+	part->buffers = vector_new(1, NULL);
+	part->partition = topic_partition;
+	printf("partition: %d\n", topic_partition);
 
-	if (broker) {
-		int fd;
-		produce_request_t *req = NULL;
-		kafka_message_t *msg = NULL;
-		uint32_t bufsize;
-		uint8_t *buf = NULL;
+	bytestring_t *buffer;
+	buffer = calloc(1, sizeof *buffer);
+	buffer->len = kafka_message_serialize(msg, &buffer->data);
 
-		req = produce_request_new(topic, atoi(part));
-		msg = kafka_message_new(payload);
-		produce_request_append_message(req, msg);
-		buf = produce_request_serialize(req, &bufsize);
-		print_bytes(buf, bufsize);
-		produce_request_free(req);
+	vector_push_back(part->buffers, buffer);
+	vector_push_back(topic->partitions, part);
+	vector_push_back(req->topics_partitions, topic);
 
-		fd = json_integer_value(json_object_get(broker, "fd"));
-		printf("sending to broker: %s:%" JSON_INTEGER_FORMAT "\n",
-			json_string_value(json_object_get(broker, "host")),
-			json_integer_value(json_object_get(broker, "port")));
-		assert(write(fd, buf, bufsize) == bufsize);
-
-		char rbuf[1024];
-		bufsize = read(fd, rbuf, sizeof rbuf);
-		print_bytes(rbuf, bufsize);
-
-		free(buf);
-	}
+	send_request(p, broker, req);
+	produce_request_free(req);
 	return 0;
 }
 
