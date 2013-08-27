@@ -27,6 +27,28 @@
 #include <kafka.h>
 #include "kafka-private.h"
 
+typedef struct {
+	char *status;
+} kafka_status_t;
+
+KAFKA_EXPORT const char *
+kafka_status_string(int status)
+{
+	static kafka_status_t statuses[] = {
+		{"Ok"},
+		{"Producer Error"},
+		{"Zookeeper Init Error"},
+		{"Broker Init Error"},
+		{"Topics Init Error"},
+		{"Topics Partitions Init Error"}
+	};
+
+	if (status >= sizeof(statuses) / sizeof(kafka_status_t)) {
+		return "Kafka Unknown";
+	}
+	return statuses[status].status;
+}
+
 KAFKA_EXPORT int kafka_foo(void)
 {
 	return 0;

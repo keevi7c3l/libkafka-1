@@ -30,17 +30,19 @@
 #include <stdint.h>
 
 #define KAFKA_OK                           0
-#define KAFKA_PRODUCER_ERROR               1
-#define KAFKA_ZOOKEEPER_INIT_ERROR         2
-#define KAFKA_BROKER_INIT_ERROR            3
-#define KAFKA_TOPICS_INIT_ERROR            4
-#define KAFKA_TOPICS_PARTITIONS_INIT_ERROR 5
+#define KAFKA_UNKNOWN                      1
+#define KAFKA_PRODUCER_ERROR               2
+#define KAFKA_ZOOKEEPER_INIT_ERROR         3
+#define KAFKA_BROKER_INIT_ERROR            4
+#define KAFKA_TOPICS_INIT_ERROR            5
+#define KAFKA_TOPICS_PARTITIONS_INIT_ERROR 6
 
 struct kafka_producer;
 struct kafka_message;
 
 /* kafka.c */
 int kafka_foo(void);
+const char *kafka_status_string(int status);
 
 /* producer/producer.c */
 struct kafka_producer *kafka_producer_new(const char *zkServer);
