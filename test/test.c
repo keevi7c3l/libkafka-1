@@ -32,13 +32,14 @@ int main(int argc, char **argv)
 {
 	struct kafka_producer *p;
 	p = kafka_producer_new("ubuntu:2181");
-	if (p) {
-//		while (1) {
-			struct kafka_message *msg = kafka_message_new("test", NULL, "hello world");
+	if (kafka_producer_status(p) == KAFKA_OK) {
+		while (1) {
+			struct kafka_message *msg;
+			msg = kafka_message_new("test", NULL, "hello world");
 			kafka_producer_send(p, msg);
 			kafka_message_free(msg);
-//			sleep(2);
-//		}
+			sleep(2);
+		}
 		printf("cleaning up\n");
 		kafka_producer_free(p);
 	}

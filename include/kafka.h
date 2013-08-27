@@ -29,6 +29,13 @@
 
 #include <stdint.h>
 
+#define KAFKA_OK                           0
+#define KAFKA_PRODUCER_ERROR               1
+#define KAFKA_ZOOKEEPER_INIT_ERROR         2
+#define KAFKA_BROKER_INIT_ERROR            3
+#define KAFKA_TOPICS_INIT_ERROR            4
+#define KAFKA_TOPICS_PARTITIONS_INIT_ERROR 5
+
 struct kafka_producer;
 struct kafka_message;
 
@@ -39,6 +46,7 @@ int kafka_foo(void);
 struct kafka_producer *kafka_producer_new(const char *zkServer);
 void kafka_producer_free(struct kafka_producer *p);
 int kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg);
+int kafka_producer_status(struct kafka_producer *p);
 
 /* message.c */
 struct kafka_message *kafka_message_new(const char *topic, const char *key,

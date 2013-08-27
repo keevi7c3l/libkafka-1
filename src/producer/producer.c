@@ -54,31 +54,43 @@ kafka_producer_new(const char *zkServer)
 	if (!p)
 		return NULL;
 
+	p->res = KAFKA_OK;
+
 	zoo_set_debug_level(ZOO_LOG_LEVEL_WARN);
 	p->zh = zookeeper_init(zkServer, producer_init_watcher, 10000, &p->cid, p, 0);
 	if (!p->zh) {
-		free(p);
-		return NULL;
+		p->res = KAFKA_ZOOKEEPER_INIT_ERROR;
+		goto finish;
 	}
 
 	p->magic = KAFKA_PRODUCER_MAGIC;
 	pthread_mutex_init(&p->mtx, NULL);
 
 	if (kp_init_brokers(p) == -1) {
-		kafka_producer_free(p);
-		return NULL;
+		p->res = KAFKA_BROKER_INIT_ERROR;
+		goto finish;
 	}
 
 	if (kp_init_topics(p) == -1) {
-		kafka_producer_free(p);
-		return NULL;
+		p->res = KAFKA_TOPICS_INIT_ERROR;
+		goto finish;
 	}
 
 	if (kp_init_topics_partitions(p) == -1) {
-		kafka_producer_free(p);
-		return NULL;
+		p->res = KAFKA_TOPICS_PARTITIONS_INIT_ERROR;
+		goto finish;
 	}
+finish:
 	return p;
+}
+
+KAFKA_EXPORT int
+kafka_producer_status(struct kafka_producer *p)
+{
+	if (!p)
+		return KAFKA_PRODUCER_ERROR;
+	CHECK_OBJ(p, KAFKA_PRODUCER_MAGIC);
+	return p->res;
 }
 
 static int32_t

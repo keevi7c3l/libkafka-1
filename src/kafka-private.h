@@ -50,6 +50,7 @@ struct kafka_producer {
         json_t *brokers;
 	json_t *topicsPartitions;
 	pthread_mutex_t mtx;
+	int res;
 };
 
 typedef struct {
