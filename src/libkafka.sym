@@ -1,6 +1,7 @@
 LIBKAFKA_1 {
 global:
         kafka_foo;
+        kafka_status_string;
         kafka_producer_new;
         kafka_producer_free;
         kafka_producer_send;
