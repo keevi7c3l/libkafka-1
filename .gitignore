@@ -24,3 +24,4 @@ libkafka.pc
 *.lo
 stamp-h1
 *.tar.gz
+*.html
