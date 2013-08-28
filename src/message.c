@@ -70,3 +70,14 @@ kafka_message_free(struct kafka_message *msg)
 			free(msg->topic);
 	}
 }
+
+int32_t
+kafka_message_size(struct kafka_message *m)
+{
+	/* crc, magic, attrs, keysize, valuesize */
+	int32_t size = 14;
+	if (m->key->len > 0)
+		size += m->key->len;
+	size += m->value->len;
+	return size;
+}

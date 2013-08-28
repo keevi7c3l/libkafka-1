@@ -70,20 +70,17 @@ typedef struct {
 
 typedef struct {
 	int32_t partition;
-//	struct vector *buffers;
 	struct vector *messages;
 } partition_messages_t;
 
 typedef struct {
 	char *topic;
-//	struct vector *partitions;
 	hashtable_t *partitions;
 } topic_partitions_t;
 
 typedef struct {
 	int16_t acks;
 	int32_t ttl;
-//	struct vector *topics_partitions;
 	hashtable_t *topics_partitions;
 } produce_request_t;
 
@@ -111,6 +108,9 @@ char *string_builder(const char *fmt, ...);
 void print_bytes(uint8_t *buf, size_t len);
 char *peel_topic(const char *path);
 char *peel_partition(const char *path);
+
+/* message.c */
+int32_t kafka_message_size(struct kafka_message *m);
 
 /* crc32.c */
 uint32_t crc32(uint32_t crc, const void *buf, size_t size);

@@ -88,17 +88,6 @@ bytestring_pack(bytestring_t *str, uint8_t *ptr)
 }
 
 int32_t
-kafka_message_size(struct kafka_message *m)
-{
-	/* crc, magic, attrs, keysize, valuesize */
-	int32_t size = 14;
-	if (m->key->len > 0)
-		size += m->key->len;
-	size += m->value->len;
-	return size;
-}
-
-int32_t
 kafka_message_serialize(struct kafka_message *m, uint8_t **out)
 {
 	message_header_t header;
