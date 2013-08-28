@@ -88,6 +88,17 @@ bytestring_pack(bytestring_t *str, uint8_t *ptr)
 }
 
 int32_t
+kafka_message_size(struct kafka_message *m)
+{
+	/* crc, magic, attrs, keysize, valuesize */
+	int32_t size = 14;
+	if (m->key->len > 0)
+		size += m->key->len;
+	size += m->value->len;
+	return size;
+}
+
+int32_t
 kafka_message_serialize(struct kafka_message *m, uint8_t **out)
 {
 	message_header_t header;
@@ -95,16 +106,10 @@ kafka_message_serialize(struct kafka_message *m, uint8_t **out)
 	size_t buflen;
 
 	memset(&header, 0, sizeof header);
-	header.size = 14; /* crc + magic + attrs + keybytes + valuebytes */
+	header.size = kafka_message_size(m);
+	buflen = 8 + 4 + header.size;
 
 	header.offset = 0;
-	buflen = sizeof(message_header_t) + 4 + 4;
-	if (m->key->len > 0) {
-		buflen += m->key->len;
-		header.size += m->key->len;
-	}
-	buflen += m->value->len;
-	header.size += m->value->len;
 
 	buf = calloc(buflen, 1);
 	ptr = buf;
@@ -140,6 +145,16 @@ request_message_header_pack(request_message_header_t *header,
 	ptr += string_pack(client, ptr);
 	*out = buf;
 	return ptr - buf;
+}
+
+size_t
+serialize_topic_partitions(topic_partitions_t *topic, struct iovec **iovec, int i)
+{
+	struct iovec *iov = iovec[i];
+	void *iter;
+	iter = hashtable_iter(topic->partitions);
+	for (; iter; hashtable_iter_next(topic->partitions, iter)) {
+	}
 }
 
 int

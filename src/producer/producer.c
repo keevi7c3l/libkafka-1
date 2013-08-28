@@ -139,8 +139,8 @@ static int
 send_request(struct kafka_producer *p, json_t *broker, produce_request_t *req)
 {
 	int i, j, vlen;
-	unsigned u, v;
 	struct iovec *iov;
+	void *u, *v;
 	size_t len;
 	uint8_t *buf, *ptr;
 	request_message_header_t header;
@@ -172,12 +172,12 @@ send_request(struct kafka_producer *p, json_t *broker, produce_request_t *req)
 	iov[i].iov_len = ptr - buf;
 	i++;
 
-	void *iter = hashtable_iter(req->topics_partitions);
-	for (; iter; iter = hashtable_iter_next(req->topics_partitions, iter)) {
+	u = hashtable_iter(req->topics_partitions);
+	for (; u; u = hashtable_iter_next(req->topics_partitions, u)) {
 		size_t topicLen;
 		uint8_t *topicBuf;
 		topic_partitions_t *topic;
-		topic = hashtable_iter_value(iter);
+		topic = hashtable_iter_value(u);
 
 		/* prefix, str, sizeof num partitions */
 		topicLen = 2 + strlen(topic->topic) + 4;
@@ -192,22 +192,22 @@ send_request(struct kafka_producer *p, json_t *broker, produce_request_t *req)
 		iov[i].iov_len = ptr - topicBuf;
 		i++;
 
-		void *iter2 = hashtable_iter(topic->partitions);
-		for (; iter2; iter2 = hashtable_iter_next(topic->partitions, iter2)) {
+		v = hashtable_iter(topic->partitions);
+		for (; v; v = hashtable_iter_next(topic->partitions, v)) {
 			unsigned w;
 			int32_t msg_set_size = 0;
 			size_t partLen, msgLen;
 			uint8_t *partBuf, *msgBuf;
-			partition_messages_t *partition = hashtable_iter_value(iter2);
+			partition_messages_t *partition = hashtable_iter_value(v);
 			partLen = 4 + 4; /* partition, message set size */
 			j = i++; /* maintain pointer to this header */
 
 			/* each message in the partition */
-			for (w = 0; w < vector_size(partition->buffers); w++) {
-				bytestring_t *bstr = vector_at(partition->buffers, w);
-				msg_set_size += bstr->len;
-				iov[i].iov_base = bstr->data;
-				iov[i].iov_len = bstr->len;
+			for (w = 0; w < vector_size(partition->messages); w++) {
+				struct kafka_message *msg;
+				msg = vector_at(partition->messages, w);
+				iov[i].iov_len = kafka_message_serialize(msg, &iov[i].iov_base);
+				msg_set_size += iov[i].iov_len;
 				i++;
 			}
 
@@ -294,15 +294,11 @@ kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg)
 	topic->partitions = hashtable_create(jenkins, keycmp, free, NULL);
 
 	part = calloc(1, sizeof *part);
-	part->buffers = vector_new(1, NULL);
+	part->messages = vector_new(1, NULL);
 	part->partition = topic_partition;
 	printf("partition: %d\n", topic_partition);
 
-	bytestring_t *buffer;
-	buffer = calloc(1, sizeof *buffer);
-	buffer->len = kafka_message_serialize(msg, &buffer->data);
-
-	vector_push_back(part->buffers, buffer);
+	vector_push_back(part->messages, msg);
 
 	hashtable_set(topic->partitions, strdup(partStr), part);
 	hashtable_set(req->topics_partitions, strdup(msg->topic), topic);

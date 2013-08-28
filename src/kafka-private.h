@@ -70,7 +70,8 @@ typedef struct {
 
 typedef struct {
 	int32_t partition;
-	struct vector *buffers;
+//	struct vector *buffers;
+	struct vector *messages;
 } partition_messages_t;
 
 typedef struct {

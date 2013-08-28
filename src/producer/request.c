@@ -54,7 +54,8 @@ produce_request_free(produce_request_t *r)
 			for (; v; v = hashtable_iter_next(topic->partitions, v)) {
 				partition_messages_t *pms;
 				pms = hashtable_iter_value(v);
-				vector_free(pms->buffers);
+//				vector_free(pms->buffers);
+				vector_free(pms->messages);
 				free(pms);
 			}
 			hashtable_destroy(topic->partitions);
