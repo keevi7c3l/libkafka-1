@@ -94,7 +94,7 @@ kafka_producer_status(struct kafka_producer *p)
 }
 
 static int32_t
-count_partitions(json_t *partitions)
+count_kafka_partitions(json_t *partitions)
 {
 	void *iter;
 	int parts = 0;
@@ -108,6 +108,17 @@ count_partitions(json_t *partitions)
 }
 
 static int32_t
+count_keys(hashtable_t *p)
+{
+	int32_t k = 0;
+	void *iter = hashtable_iter(p);
+	for (; iter; iter = hashtable_iter_next(p, iter)) {
+		k++;
+	}
+	return k;
+}
+
+static int32_t
 pick_random_partition(struct kafka_producer *p, struct kafka_message *msg)
 {
 	int32_t n;
@@ -118,7 +129,7 @@ pick_random_partition(struct kafka_producer *p, struct kafka_message *msg)
 	partitions = json_object_get(topic, "partitions");
 	if (!partitions)
 		return -1;
-	n = count_partitions(partitions);
+	n = count_kafka_partitions(partitions);
 	if (n <= 0)
 		return -1;
 	return rand() % n;
@@ -156,16 +167,17 @@ send_request(struct kafka_producer *p, json_t *broker, produce_request_t *req)
 
 	ptr += uint16_pack(req->acks, ptr);
 	ptr += uint32_pack(req->ttl, ptr);
-	ptr += uint32_pack(vector_size(req->topics_partitions), ptr);
+	ptr += uint32_pack(count_keys(req->topics_partitions), ptr);
 	iov[i].iov_base = buf;
 	iov[i].iov_len = ptr - buf;
 	i++;
 
-	for (u = 0; u < vector_size(req->topics_partitions); u++) {
+	void *iter = hashtable_iter(req->topics_partitions);
+	for (; iter; iter = hashtable_iter_next(req->topics_partitions, iter)) {
 		size_t topicLen;
 		uint8_t *topicBuf;
 		topic_partitions_t *topic;
-		topic = vector_at(req->topics_partitions, u);
+		topic = hashtable_iter_value(iter);
 
 		/* prefix, str, sizeof num partitions */
 		topicLen = 2 + strlen(topic->topic) + 4;
@@ -173,18 +185,20 @@ send_request(struct kafka_producer *p, json_t *broker, produce_request_t *req)
 
 		ptr = topicBuf;
 		ptr += string_pack(topic->topic, ptr);
-		ptr += uint32_pack(vector_size(topic->partitions), ptr); /* write num partitions */
+		/* write number of partitions in this topic */
+		ptr += uint32_pack(count_keys(topic->partitions), ptr);
 
 		iov[i].iov_base = topicBuf;
 		iov[i].iov_len = ptr - topicBuf;
 		i++;
 
-		for (v = 0; v < vector_size(topic->partitions); v++) {
+		void *iter2 = hashtable_iter(topic->partitions);
+		for (; iter2; iter2 = hashtable_iter_next(topic->partitions, iter2)) {
 			unsigned w;
 			int32_t msg_set_size = 0;
 			size_t partLen, msgLen;
 			uint8_t *partBuf, *msgBuf;
-			partition_messages_t *partition = vector_at(topic->partitions, v);
+			partition_messages_t *partition = hashtable_iter_value(iter2);
 			partLen = 4 + 4; /* partition, message set size */
 			j = i++; /* maintain pointer to this header */
 
@@ -211,15 +225,11 @@ send_request(struct kafka_producer *p, json_t *broker, produce_request_t *req)
 		header.size += iov[j].iov_len;
 	}
 	header.size += 2 + strlen(client);
-	iov[0].iov_base = calloc(1, sizeof(request_message_header_t) + 2 + strlen(client));
-	pp = iov[0].iov_base;
-	pp += uint32_pack(header.size, pp);
-	pp += uint16_pack(header.apikey, pp);
-	pp += uint16_pack(header.apiversion, pp);
-	pp += uint32_pack(header.correlation_id, pp);
-	pp += string_pack(client, pp);
-	iov[0].iov_len = pp - iov[0].iov_base;
 
+	iov[0].iov_len = request_message_header_pack(&header, client,
+						&iov[0].iov_base);
+
+	/* TODO: do actual sending in kafka_producer_send() */
 	int fd;
 	fd = json_integer_value(json_object_get(broker, "fd"));
 	printf("sending to broker: %s:%" JSON_INTEGER_FORMAT "\n",
@@ -281,7 +291,7 @@ kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg)
 
 	topic = calloc(1, sizeof *topic);
 	topic->topic = msg->topic;
-	topic->partitions = vector_new(1, NULL);
+	topic->partitions = hashtable_create(jenkins, keycmp, free, NULL);
 
 	part = calloc(1, sizeof *part);
 	part->buffers = vector_new(1, NULL);
@@ -293,8 +303,9 @@ kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg)
 	buffer->len = kafka_message_serialize(msg, &buffer->data);
 
 	vector_push_back(part->buffers, buffer);
-	vector_push_back(topic->partitions, part);
-	vector_push_back(req->topics_partitions, topic);
+
+	hashtable_set(topic->partitions, strdup(partStr), part);
+	hashtable_set(req->topics_partitions, strdup(msg->topic), topic);
 
 	send_request(p, broker, req);
 	produce_request_free(req);

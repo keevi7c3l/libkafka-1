@@ -37,27 +37,29 @@ produce_request_new(void)
 	req = calloc(1, sizeof *req);
 	req->acks = 1;
 	req->ttl = 1500;
-	req->topics_partitions = vector_new(1, NULL);
+	req->topics_partitions = hashtable_create(jenkins, keycmp, free, NULL);
 	return req;
 }
 
 void
 produce_request_free(produce_request_t *r)
 {
-	unsigned u, v;
+	void *u, *v;
 	if (r) {
-		for (u = 0; u < vector_size(r->topics_partitions); u++) {
+		u = hashtable_iter(r->topics_partitions);
+		for (; u; u = hashtable_iter_next(r->topics_partitions, u)) {
 			topic_partitions_t *topic;
-			topic = vector_at(r->topics_partitions, u);
-			for (v = 0; v < vector_size(topic->partitions); v++) {
+			topic = hashtable_iter_value(u);
+			v = hashtable_iter(topic->partitions);
+			for (; v; v = hashtable_iter_next(topic->partitions, v)) {
 				partition_messages_t *pms;
-				pms = vector_at(topic->partitions, v);
+				pms = hashtable_iter_value(v);
 				vector_free(pms->buffers);
 				free(pms);
 			}
-			vector_free(topic->partitions);
+			hashtable_destroy(topic->partitions);
 			free(topic);
 		}
-		vector_free(r->topics_partitions);
+		hashtable_destroy(r->topics_partitions);
 	}
 }

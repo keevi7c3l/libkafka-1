@@ -75,13 +75,15 @@ typedef struct {
 
 typedef struct {
 	char *topic;
-	struct vector *partitions;
+//	struct vector *partitions;
+	hashtable_t *partitions;
 } topic_partitions_t;
 
 typedef struct {
 	int16_t acks;
 	int32_t ttl;
-	struct vector *topics_partitions;
+//	struct vector *topics_partitions;
+	hashtable_t *topics_partitions;
 } produce_request_t;
 
 struct kafka_message {
@@ -126,14 +128,8 @@ void watch_topic_partition_state(zhandle_t *zp, int type, int state,
 enum {PRODUCE=0, FETCH=1, MULTIFETCH=2, MULTIPRODUCE=3, OFFSETS=4};
 
 /*
- * [(topic, (partition, messages), (topic, (partition, messages)))]
- */
-
-/*
  * {
- *     "metadata": { "topics": 2 },
  *     "foo_topic": {
- *         "metadata": { "partitions": 2 },
  *         "partition_0": [
  *             { msg 1 },
  *             { msg 2},
@@ -143,7 +139,6 @@ enum {PRODUCE=0, FETCH=1, MULTIFETCH=2, MULTIPRODUCE=3, OFFSETS=4};
  *         ]
  *     },
  *     "bar_topic": {
- *         "metadata": { "partitions": 1 },
  *         "partition_1": [
  *             { msg 4 }
  *         ]
@@ -155,8 +150,6 @@ produce_request_t *produce_request_new(void);
 void produce_request_free(produce_request_t *r);
 int produce_request_append(struct kafka_producer *p, produce_request_t *req,
 			struct kafka_message *msg);
-//int produce_request_append_message(produce_request_t *req, kafka_message_t *msg);
-uint8_t *produce_request_serialize(produce_request_t *req, uint32_t *outlen);
 
 /**
  * OBJ stuff taken from miniobj.h in Varnish. Written by PHK.

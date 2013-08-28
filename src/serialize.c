@@ -126,7 +126,23 @@ kafka_message_serialize(struct kafka_message *m, uint8_t **out)
 	return ptr - buf;
 }
 
-uint8_t *
-produce_request_serialize(produce_request_t *req, uint32_t *outlen)
+size_t
+request_message_header_pack(request_message_header_t *header,
+			const char *client, uint8_t **out)
+{
+	uint8_t *buf, *ptr;
+	buf = calloc(1, sizeof *header + 2 + strlen(client));
+	ptr = buf;
+	ptr += uint32_pack(header->size, ptr);
+	ptr += uint16_pack(header->apikey, ptr);
+	ptr += uint16_pack(header->apiversion, ptr);
+	ptr += uint32_pack(header->correlation_id, ptr);
+	ptr += string_pack(client, ptr);
+	*out = buf;
+	return ptr - buf;
+}
+
+int
+produce_request_serialize(produce_request_t *req, struct iovec **out)
 {
 }
