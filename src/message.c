@@ -72,8 +72,12 @@ kafka_message_free(struct kafka_message *msg)
 }
 
 int32_t
-kafka_message_size(struct kafka_message *m)
+kafka_message_packed_size(struct kafka_message *m)
 {
+	/**
+	 * Returns size of the message, not including offset+size header.
+	 */
+
 	/* crc, magic, attrs, keysize, valuesize */
 	int32_t size = 14;
 	if (m->key->len > 0)

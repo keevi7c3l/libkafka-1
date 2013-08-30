@@ -110,7 +110,7 @@ char *peel_topic(const char *path);
 char *peel_partition(const char *path);
 
 /* message.c */
-int32_t kafka_message_size(struct kafka_message *m);
+int32_t kafka_message_packed_size(struct kafka_message *m);
 
 /* crc32.c */
 uint32_t crc32(uint32_t crc, const void *buf, size_t size);

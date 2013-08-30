@@ -192,31 +192,8 @@ send_request(struct kafka_producer *p, json_t *broker, produce_request_t *req)
 		iov[i].iov_len = ptr - topicBuf;
 		i++;
 
-		v = hashtable_iter(topic->partitions);
-		for (; v; v = hashtable_iter_next(topic->partitions, v)) {
-			unsigned w;
-			int32_t msg_set_size = 0;
-			size_t partLen, msgLen;
-			uint8_t *partBuf, *msgBuf;
-			partition_messages_t *partition = hashtable_iter_value(v);
-			partLen = 4 + 4; /* partition, message set size */
-			j = i++; /* maintain pointer to this header */
-
-			/* each message in the partition */
-			for (w = 0; w < vector_size(partition->messages); w++) {
-				struct kafka_message *msg;
-				msg = vector_at(partition->messages, w);
-				iov[i].iov_len = kafka_message_serialize(msg, &iov[i].iov_base);
-				msg_set_size += iov[i].iov_len;
-				i++;
-			}
-
-			iov[j].iov_base = calloc(partLen, 1);
-			void *pp = iov[j].iov_base;
-			pp += uint32_pack(partition->partition, pp);
-			pp += uint32_pack(msg_set_size, pp);
-			iov[j].iov_len = pp - iov[j].iov_base;
-		}
+		iov[i].iov_len = serialize_topic_partitions(topic, &iov[i].iov_base);
+		i++;
 	}
 
 	unsigned uu;

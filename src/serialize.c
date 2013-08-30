@@ -24,6 +24,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <assert.h>
 #include <string.h>
 #include "serialize.h"
 
@@ -87,37 +88,37 @@ bytestring_pack(bytestring_t *str, uint8_t *ptr)
 	return offset;
 }
 
+static inline size_t
+kafka_message_serialize0(struct kafka_message *m, uint8_t *ptr)
+{
+	int32_t crc;
+	uint8_t *p = ptr;
+	size_t crc_offset = 12;
+	size_t crc_payload = 16;
+	p += uint64_pack(0, p);
+	p += uint32_pack(kafka_message_size(m), p);
+	p += sizeof crc; /* skip crc */
+	p += uint8_pack(0, p); /* magic */
+	p += uint8_pack(0, p); /* attrs */
+	p += bytestring_pack(m->key, p);
+	p += bytestring_pack(m->value, p);
+	crc = crc32(0, ptr+crc_payload, p - (ptr+crc_payload));
+	uint32_pack(crc, ptr+crc_offset);
+	return p - ptr;
+}
+
 int32_t
 kafka_message_serialize(struct kafka_message *m, uint8_t **out)
 {
-	message_header_t header;
-	uint8_t *buf, *ptr, *crc;
-	size_t buflen;
+	uint8_t *buf;
+	int32_t buflen;
 
-	memset(&header, 0, sizeof header);
-	header.size = kafka_message_size(m);
-	buflen = 8 + 4 + header.size;
-
-	header.offset = 0;
-
+	/* offset + size */
+	buflen = sizeof(int64_t) + sizeof(int32_t) + kafka_message_size(m);
 	buf = calloc(buflen, 1);
-	ptr = buf;
-	crc = buf+12;
-
-	ptr += uint64_pack(header.offset, ptr);
-	ptr += uint32_pack(header.size, ptr);
-
-	ptr += 4; /* skip crc */
-
-	ptr += uint8_pack(header.magic, ptr);
-	ptr += uint8_pack(header.attrs, ptr);
-
-	ptr += bytestring_pack(m->key, ptr);
-	ptr += bytestring_pack(m->value, ptr);
-	header.crc = crc32(0, crc+4, ptr - (crc+4));
-	uint32_pack(header.crc, crc);
+	kafka_message_serialize0(m, buf);
 	*out = buf;
-	return ptr - buf;
+	return buflen;
 }
 
 size_t
@@ -137,13 +138,53 @@ request_message_header_pack(request_message_header_t *header,
 }
 
 size_t
-serialize_topic_partitions(topic_partitions_t *topic, struct iovec **iovec, int i)
+serialize_topic_partitions(topic_partitions_t *topic, uint8_t **out)
 {
-	struct iovec *iov = iovec[i];
 	void *iter;
+	uint8_t *buf, *ptr;
+	unsigned u;
+	size_t sz = 128;
+	buf = calloc(sz, 1);
+	ptr = buf;
 	iter = hashtable_iter(topic->partitions);
-	for (; iter; hashtable_iter_next(topic->partitions, iter)) {
+
+	for (; iter; iter = hashtable_iter_next(topic->partitions, iter)) {
+		int32_t msg_set_size = 0;
+		partition_messages_t *partition = hashtable_iter_value(iter);
+		uint8_t *msgSetSizePtr;
+
+		ptr += uint32_pack(partition->partition, ptr);
+		msgSetSizePtr = ptr;
+		ptr += sizeof(int32_t); /* set this later */
+
+		for (u = 0; u < vector_size(partition->messages); u++) {
+			size_t msgSize, ptrOffset;
+			struct kafka_message *msg;
+			msg = vector_at(partition->messages, u);
+			/* msgSize doesn't include offset+size header */
+			msgSize = sizeof(int64_t) + sizeof(int32_t);
+			msgSize += kafka_message_packed_size(msg);
+			ptrOffset = ptr - buf;
+			if (msgSize >= sz - ptrOffset) {
+				size_t newSize = sz;
+				do {
+					newSize *= 2;
+				} while (newSize - ptrOffset < msgSize);
+				buf = realloc(buf, newSize);
+				assert(buf);
+				memset(&buf[sz], 0, newSize);
+				sz = newSize;
+				ptr = &buf[ptrOffset];
+			}
+			ptr += kafka_message_serialize0(msg, ptr);
+			msg_set_size += msgSize;
+		}
+
+		uint32_pack(msg_set_size, msgSetSizePtr);
 	}
+//	print_bytes(buf, ptr - buf);
+	*out = buf;
+	return ptr - buf;
 }
 
 int
