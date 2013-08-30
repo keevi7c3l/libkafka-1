@@ -96,7 +96,7 @@ kafka_message_serialize0(struct kafka_message *m, uint8_t *ptr)
 	size_t crc_offset = 12;
 	size_t crc_payload = 16;
 	p += uint64_pack(0, p);
-	p += uint32_pack(kafka_message_size(m), p);
+	p += uint32_pack(kafka_message_packed_size(m), p);
 	p += sizeof crc; /* skip crc */
 	p += uint8_pack(0, p); /* magic */
 	p += uint8_pack(0, p); /* attrs */
@@ -105,20 +105,6 @@ kafka_message_serialize0(struct kafka_message *m, uint8_t *ptr)
 	crc = crc32(0, ptr+crc_payload, p - (ptr+crc_payload));
 	uint32_pack(crc, ptr+crc_offset);
 	return p - ptr;
-}
-
-int32_t
-kafka_message_serialize(struct kafka_message *m, uint8_t **out)
-{
-	uint8_t *buf;
-	int32_t buflen;
-
-	/* offset + size */
-	buflen = sizeof(int64_t) + sizeof(int32_t) + kafka_message_size(m);
-	buf = calloc(buflen, 1);
-	kafka_message_serialize0(m, buf);
-	*out = buf;
-	return buflen;
 }
 
 size_t
@@ -138,56 +124,85 @@ request_message_header_pack(request_message_header_t *header,
 }
 
 size_t
-serialize_topic_partitions(topic_partitions_t *topic, uint8_t **out)
+serialize_topic_partitions_to_buffer(topic_partitions_t *topic, KafkaBuffer *buffer)
 {
-	void *iter;
-	uint8_t *buf, *ptr;
 	unsigned u;
-	size_t sz = 128;
-	buf = calloc(sz, 1);
-	ptr = buf;
+	void *iter;
+	size_t offset = buffer->len;
 	iter = hashtable_iter(topic->partitions);
-
 	for (; iter; iter = hashtable_iter_next(topic->partitions, iter)) {
 		int32_t msg_set_size = 0;
 		partition_messages_t *partition = hashtable_iter_value(iter);
-		uint8_t *msgSetSizePtr;
+		size_t msgSetSizeOffset;
 
-		ptr += uint32_pack(partition->partition, ptr);
-		msgSetSizePtr = ptr;
-		ptr += sizeof(int32_t); /* set this later */
+		KafkaBufferReserve(buffer, sizeof(int32_t));
+
+		buffer->len += uint32_pack(partition->partition, &buffer->data[buffer->len]);
+		msgSetSizeOffset = buffer->len;
+		buffer->len += sizeof(int32_t);
 
 		for (u = 0; u < vector_size(partition->messages); u++) {
-			size_t msgSize, ptrOffset;
-			struct kafka_message *msg;
-			msg = vector_at(partition->messages, u);
-			/* msgSize doesn't include offset+size header */
-			msgSize = sizeof(int64_t) + sizeof(int32_t);
+			struct kafka_message *msg = vector_at(partition->messages, u);
+			size_t msgSize = sizeof(int64_t) + sizeof(int32_t);
 			msgSize += kafka_message_packed_size(msg);
-			ptrOffset = ptr - buf;
-			if (msgSize >= sz - ptrOffset) {
-				size_t newSize = sz;
-				do {
-					newSize *= 2;
-				} while (newSize - ptrOffset < msgSize);
-				buf = realloc(buf, newSize);
-				assert(buf);
-				memset(&buf[sz], 0, newSize);
-				sz = newSize;
-				ptr = &buf[ptrOffset];
-			}
-			ptr += kafka_message_serialize0(msg, ptr);
+			KafkaBufferReserve(buffer, msgSize);
+			buffer->len += kafka_message_serialize0(msg, &buffer->data[buffer->len]);
 			msg_set_size += msgSize;
 		}
-
-		uint32_pack(msg_set_size, msgSetSizePtr);
+		uint32_pack(msg_set_size, &buffer->data[msgSetSizeOffset]);
 	}
-//	print_bytes(buf, ptr - buf);
-	*out = buf;
-	return ptr - buf;
+	return buffer->len - offset;
 }
 
-int
-produce_request_serialize(produce_request_t *req, struct iovec **out)
+static int32_t
+count_keys(hashtable_t *p)
 {
+	int32_t k = 0;
+	void *iter = hashtable_iter(p);
+	for (; iter; iter = hashtable_iter_next(p, iter)) {
+		k++;
+	}
+	return k;
+}
+
+size_t
+produce_request_serialize(produce_request_t *req, KafkaBuffer *buffer)
+{
+	size_t len;
+	size_t headerOffset;
+	void *u, *v;
+	const char *client = "foo";
+
+	len = sizeof(request_message_header_t);
+	len += 2 + strlen(client);
+	len += 2 + 4 + 4; /* acks, ttl, topics */
+
+	assert(buffer->len == 0);
+	KafkaBufferReserve(buffer, len);
+
+	uint8_t *ptr = buffer->data;
+	ptr += uint32_pack(0, ptr); /* request size, updated later */
+	ptr += uint16_pack(PRODUCE, ptr);
+	ptr += uint16_pack(0, ptr);
+	ptr += uint32_pack(1, ptr);
+	ptr += string_pack(client, ptr);
+	ptr += uint16_pack(req->acks, ptr);
+	ptr += uint32_pack(req->ttl, ptr);
+	ptr += uint32_pack(count_keys(req->topics_partitions), ptr);
+	buffer->len = ptr - buffer->data;
+
+	u = hashtable_iter(req->topics_partitions);
+	for (; u; u = hashtable_iter_next(req->topics_partitions, u)) {
+		size_t topicLen;
+		topic_partitions_t *topic = hashtable_iter_value(u);
+		/* prefix, str, sizeof num partitions */
+		topicLen = 2 + strlen(topic->topic) + 4;
+		KafkaBufferReserve(buffer, topicLen);
+		buffer->len += string_pack(topic->topic, &buffer->data[buffer->len]);
+		buffer->len += uint32_pack(count_keys(topic->partitions), &buffer->data[buffer->len]);
+		serialize_topic_partitions_to_buffer(topic, buffer);
+	}
+
+	uint32_pack(buffer->len-4, &buffer->data[0]);
+	return buffer->len;
 }

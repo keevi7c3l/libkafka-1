@@ -24,23 +24,48 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _LIBKAFKA_SERIALIZE_H_
-#define _LIBKAFKA_SERIALIZE_H_
-
-#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include <assert.h>
 #include "kafka-private.h"
 
-inline size_t uint8_pack(uint8_t value, uint8_t *ptr);
-inline size_t uint16_pack(uint16_t value, uint8_t *ptr);
-inline size_t uint32_pack(uint32_t value, uint8_t *ptr);
-inline size_t uint64_pack(uint64_t value, uint8_t *ptr);
-inline size_t string_pack(const char *str, uint8_t *ptr);
-inline size_t bytestring_pack(bytestring_t *str, uint8_t *ptr);
+KafkaBuffer *
+KafkaBufferNew(size_t size)
+{
+	KafkaBuffer *buffer;
+	buffer = calloc(1, sizeof *buffer);
+	if (size > 0)
+		buffer->alloced = size;
+	else
+		buffer->alloced = 1024;
+	buffer->data = calloc(buffer->alloced, 1);
+	return buffer;
+}
 
-int32_t kafka_message_serialize(struct kafka_message *m, uint8_t **out);
-size_t request_message_header_pack(request_message_header_t *header,
-				const char *client, uint8_t **out);
-size_t serialize_topic_partitions(topic_partitions_t *topic, uint8_t **out);
-size_t produce_request_serialize(produce_request_t *req, KafkaBuffer *buffer);
+size_t
+KafkaBufferReserve(KafkaBuffer *buffer, size_t size)
+{
+	/**
+	 * Make sure there's enough room in the buffer.
+	 */
+	if (size >= buffer->alloced - buffer->len) {
+		do {
+			KafkaBufferResize(buffer);
+		} while (size >= buffer->alloced - buffer->len);
+	}
+	return buffer->alloced;
+}
 
-#endif
+size_t
+KafkaBufferResize(KafkaBuffer *buffer)
+{
+	size_t sz;
+	uint8_t *ptr;
+	sz = buffer->alloced * 2;
+	ptr = realloc(buffer->data, sz);
+	assert(ptr);
+	buffer->data = ptr;
+	memset(&buffer->data[buffer->alloced], 0, buffer->alloced);
+	buffer->alloced = sz;
+	return sz;
+}

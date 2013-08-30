@@ -36,6 +36,17 @@
 
 #define KAFKA_EXPORT __attribute__((visibility("default")))
 
+/* buffer.c */
+typedef struct {
+	size_t alloced;
+	size_t len;
+	uint8_t *data;
+} KafkaBuffer;
+
+KafkaBuffer *KafkaBufferNew(size_t size);
+size_t KafkaBufferReserve(KafkaBuffer *buffer, size_t size);
+size_t KafkaBufferResize(KafkaBuffer *buffer);
+
 typedef struct {
 	int32_t len;
 	uint8_t *data;

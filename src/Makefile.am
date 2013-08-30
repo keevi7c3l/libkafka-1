@@ -26,6 +26,7 @@ libkafka_la_SOURCES = \
 	crc32.c \
 	message.c \
 	serialize.c \
+	buffer.c \
 	producer/request.c \
 	producer/producer.c \
 	producer/watchers.c \

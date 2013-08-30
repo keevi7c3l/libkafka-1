@@ -108,17 +108,6 @@ count_kafka_partitions(json_t *partitions)
 }
 
 static int32_t
-count_keys(hashtable_t *p)
-{
-	int32_t k = 0;
-	void *iter = hashtable_iter(p);
-	for (; iter; iter = hashtable_iter_next(p, iter)) {
-		k++;
-	}
-	return k;
-}
-
-static int32_t
 pick_random_partition(struct kafka_producer *p, struct kafka_message *msg)
 {
 	int32_t n;
@@ -138,73 +127,8 @@ pick_random_partition(struct kafka_producer *p, struct kafka_message *msg)
 static int
 send_request(struct kafka_producer *p, json_t *broker, produce_request_t *req)
 {
-	int i, j, vlen;
-	struct iovec *iov;
-	void *u, *v;
-	size_t len;
-	uint8_t *buf, *ptr;
-	request_message_header_t header;
-	memset(&header, 0, sizeof header);
-
-	vlen = 16;
-	iov = calloc(vlen, sizeof *iov);
-	i = 1; /* v[0] is reserved for request header */
-
-	/* header.size gets updated at the end */
-	header.size = 2 + 2 + 4; /* apikey + apiversion + correlation_id */
-	header.apikey = PRODUCE;
-	header.apiversion = 0;
-	header.correlation_id = 1;
-
-	const char *client = "foo";
-
-	len = sizeof header;
-	len += 2 + strlen(client);
-	len += 2 + 4 + 4; /* acks, ttl, topics */
-
-	buf = calloc(len, 1);
-	ptr = buf;
-
-	ptr += uint16_pack(req->acks, ptr);
-	ptr += uint32_pack(req->ttl, ptr);
-	ptr += uint32_pack(count_keys(req->topics_partitions), ptr);
-	iov[i].iov_base = buf;
-	iov[i].iov_len = ptr - buf;
-	i++;
-
-	u = hashtable_iter(req->topics_partitions);
-	for (; u; u = hashtable_iter_next(req->topics_partitions, u)) {
-		size_t topicLen;
-		uint8_t *topicBuf;
-		topic_partitions_t *topic;
-		topic = hashtable_iter_value(u);
-
-		/* prefix, str, sizeof num partitions */
-		topicLen = 2 + strlen(topic->topic) + 4;
-		topicBuf = calloc(topicLen, 1);
-
-		ptr = topicBuf;
-		ptr += string_pack(topic->topic, ptr);
-		/* write number of partitions in this topic */
-		ptr += uint32_pack(count_keys(topic->partitions), ptr);
-
-		iov[i].iov_base = topicBuf;
-		iov[i].iov_len = ptr - topicBuf;
-		i++;
-
-		iov[i].iov_len = serialize_topic_partitions(topic, &iov[i].iov_base);
-		i++;
-	}
-
-	unsigned uu;
-	void *pp;
-	for (j = 1; j < i; j++) {
-		header.size += iov[j].iov_len;
-	}
-	header.size += 2 + strlen(client);
-
-	iov[0].iov_len = request_message_header_pack(&header, client,
-						&iov[0].iov_base);
+	KafkaBuffer *buffer = KafkaBufferNew(0);
+	produce_request_serialize(req, buffer);
 
 	/* TODO: do actual sending in kafka_producer_send() */
 	int fd;
@@ -213,20 +137,8 @@ send_request(struct kafka_producer *p, json_t *broker, produce_request_t *req)
 		json_string_value(json_object_get(broker, "host")),
 		json_integer_value(json_object_get(broker, "port")));
 
-	for (j = 0; j < i; j++) {
-		int k;
-		ptr = iov[j].iov_base;
-		for (k = 0; k < iov[j].iov_len; k++, ptr++)
-			printf("0x%02X ", *ptr);
-	}
-	printf("\n");
-
-	assert(writev(fd, iov, i) == header.size + 4);
-
-	for (j = 0; j < i; j++)
-		free(iov[j].iov_base);
-	free(iov);
-
+	print_bytes(buffer->data, buffer->len);
+	assert(write(fd, buffer->data, buffer->len) == buffer->len);
 
 	char rbuf[1024];
 	size_t bufsize;
