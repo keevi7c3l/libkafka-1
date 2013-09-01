@@ -37,6 +37,10 @@
 #define KAFKA_TOPICS_INIT_ERROR            5
 #define KAFKA_TOPICS_PARTITIONS_INIT_ERROR 6
 
+#define KAFKA_REQUEST_ASYNC      0
+#define KAFKA_REQUEST_SYNC       1
+#define KAFKA_REQUEST_FULL_SYNC -1
+
 struct kafka_producer;
 struct kafka_message;
 
@@ -47,7 +51,8 @@ const char *kafka_status_string(int status);
 /* producer/producer.c */
 struct kafka_producer *kafka_producer_new(const char *zkServer);
 void kafka_producer_free(struct kafka_producer *p);
-int kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg);
+int kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg,
+			int16_t sync);
 int kafka_producer_status(struct kafka_producer *p);
 
 /* message.c */

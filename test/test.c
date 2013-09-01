@@ -36,7 +36,7 @@ int main(int argc, char **argv)
 		while (1) {
 			struct kafka_message *msg;
 			msg = kafka_message_new("test", NULL, "hello world");
-			kafka_producer_send(p, msg);
+			kafka_producer_send(p, msg, KAFKA_REQUEST_FULL_SYNC);
 			kafka_message_free(msg);
 			sleep(2);
 		}

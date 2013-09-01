@@ -148,8 +148,15 @@ send_request(struct kafka_producer *p, json_t *broker, produce_request_t *req)
 }
 
 KAFKA_EXPORT int
-kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg)
+kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg,
+		int16_t sync)
 {
+	/**
+	 * Kafka provides a few differeny synchronization levels.
+	 * - KAFKA_REQUEST_ASYNC: no ack response
+	 * - KAFKA_REQUEST_SYNC: ack response after message is written to log
+	 * - KAFKA_REQUEST_FULL_SYNC: ack response after full replication
+	 */
 	produce_request_t *req;
 	topic_partitions_t *topic;
 	partition_messages_t *part;
@@ -176,7 +183,8 @@ kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg)
 	json_t *broker = kp_broker_by_id(p, brokerId);
 	if (!broker)
 		return -1;
-	req = produce_request_new();
+
+	req = produce_request_new(sync);
 
 	topic = calloc(1, sizeof *topic);
 	topic->topic = msg->topic;

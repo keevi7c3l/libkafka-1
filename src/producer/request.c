@@ -27,15 +27,21 @@
 #include <arpa/inet.h>
 #include <string.h>
 #include <assert.h>
+#include <kafka.h>
 #include "../kafka-private.h"
 #include "../vector.h"
 
 produce_request_t *
-produce_request_new(void)
+produce_request_new(int16_t sync)
 {
 	produce_request_t *req;
+	if (sync != KAFKA_REQUEST_ASYNC &&
+		sync != KAFKA_REQUEST_SYNC &&
+		sync != KAFKA_REQUEST_FULL_SYNC) {
+		return NULL;
+	}
 	req = calloc(1, sizeof *req);
-	req->acks = 1;
+	req->acks = sync;
 	req->ttl = 1500;
 	req->topics_partitions = hashtable_create(jenkins, keycmp, free, NULL);
 	return req;

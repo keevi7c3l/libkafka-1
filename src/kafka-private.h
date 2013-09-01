@@ -158,7 +158,7 @@ enum {PRODUCE=0, FETCH=1, MULTIFETCH=2, MULTIPRODUCE=3, OFFSETS=4};
  * }
  */
 
-produce_request_t *produce_request_new(void);
+produce_request_t *produce_request_new(int16_t sync);
 void produce_request_free(produce_request_t *r);
 int produce_request_append(struct kafka_producer *p, produce_request_t *req,
 			struct kafka_message *msg);
