@@ -71,6 +71,9 @@ kafka_producer_new(const char *zkServer)
 		goto finish;
 	}
 
+	void *iter = json_object_iter(p->brokers);
+	topic_metadata_request(json_object_iter_value(iter), NULL);
+
 	if (kp_init_topics(p) == -1) {
 		p->res = KAFKA_TOPICS_INIT_ERROR;
 		goto finish;
@@ -139,6 +142,7 @@ send_request(struct kafka_producer *p, json_t *broker, produce_request_t *req)
 
 	print_bytes(buffer->data, buffer->len);
 	assert(write(fd, buffer->data, buffer->len) == buffer->len);
+	KafkaBufferFree(buffer);
 
 	char rbuf[1024];
 	size_t bufsize;

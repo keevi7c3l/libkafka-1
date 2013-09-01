@@ -38,9 +38,9 @@ inline size_t string_pack(const char *str, uint8_t *ptr);
 inline size_t bytestring_pack(bytestring_t *str, uint8_t *ptr);
 
 int32_t kafka_message_serialize(struct kafka_message *m, uint8_t **out);
-size_t request_message_header_pack(request_message_header_t *header,
-				const char *client, uint8_t **out);
 size_t serialize_topic_partitions(topic_partitions_t *topic, uint8_t **out);
+inline size_t request_header_pack(request_header_t *header,
+				const char *client, uint8_t *ptr);
 size_t produce_request_serialize(produce_request_t *req, KafkaBuffer *buffer);
 
 #endif

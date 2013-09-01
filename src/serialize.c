@@ -107,20 +107,15 @@ kafka_message_serialize0(struct kafka_message *m, uint8_t *ptr)
 	return p - ptr;
 }
 
-size_t
-request_message_header_pack(request_message_header_t *header,
-			const char *client, uint8_t **out)
+static int32_t
+count_keys(hashtable_t *p)
 {
-	uint8_t *buf, *ptr;
-	buf = calloc(1, sizeof *header + 2 + strlen(client));
-	ptr = buf;
-	ptr += uint32_pack(header->size, ptr);
-	ptr += uint16_pack(header->apikey, ptr);
-	ptr += uint16_pack(header->apiversion, ptr);
-	ptr += uint32_pack(header->correlation_id, ptr);
-	ptr += string_pack(client, ptr);
-	*out = buf;
-	return ptr - buf;
+	int32_t k = 0;
+	void *iter = hashtable_iter(p);
+	for (; iter; iter = hashtable_iter_next(p, iter)) {
+		k++;
+	}
+	return k;
 }
 
 size_t
@@ -154,15 +149,16 @@ serialize_topic_partitions_to_buffer(topic_partitions_t *topic, KafkaBuffer *buf
 	return buffer->len - offset;
 }
 
-static int32_t
-count_keys(hashtable_t *p)
+inline size_t
+request_header_pack(request_header_t *header, const char *client, uint8_t *ptr)
 {
-	int32_t k = 0;
-	void *iter = hashtable_iter(p);
-	for (; iter; iter = hashtable_iter_next(p, iter)) {
-		k++;
-	}
-	return k;
+	size_t offset = 0;
+	offset += uint32_pack(header->size, ptr);
+	offset += uint16_pack(header->apikey, ptr+offset);
+	offset += uint16_pack(header->apiversion, ptr+offset);
+	offset += uint32_pack(header->correlation_id, ptr+offset);
+	offset += string_pack(client, ptr+offset);
+	return offset;
 }
 
 size_t
@@ -170,22 +166,24 @@ produce_request_serialize(produce_request_t *req, KafkaBuffer *buffer)
 {
 	size_t len;
 	size_t headerOffset;
+	request_header_t header;
+	const char *client = "libkafka";
 	void *u, *v;
-	const char *client = "foo";
+	memset(&header, 0, sizeof header);
+	header.apikey = PRODUCE;
+	header.correlation_id = 1;
 
-	len = sizeof(request_message_header_t);
+	len = sizeof header;
 	len += 2 + strlen(client);
 	len += 2 + 4 + 4; /* acks, ttl, topics */
 
 	assert(buffer->len == 0);
 	KafkaBufferReserve(buffer, len);
 
+	/* XXX: header size gets updated later */
 	uint8_t *ptr = buffer->data;
-	ptr += uint32_pack(0, ptr); /* request size, updated later */
-	ptr += uint16_pack(PRODUCE, ptr);
-	ptr += uint16_pack(0, ptr);
-	ptr += uint32_pack(1, ptr);
-	ptr += string_pack(client, ptr);
+	ptr += request_header_pack(&header, client, ptr);
+
 	ptr += uint16_pack(req->acks, ptr);
 	ptr += uint32_pack(req->ttl, ptr);
 	ptr += uint32_pack(count_keys(req->topics_partitions), ptr);
@@ -203,6 +201,7 @@ produce_request_serialize(produce_request_t *req, KafkaBuffer *buffer)
 		serialize_topic_partitions_to_buffer(topic, buffer);
 	}
 
+	/* write header size finally */
 	uint32_pack(buffer->len-4, &buffer->data[0]);
 	return buffer->len;
 }

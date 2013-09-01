@@ -39,9 +39,12 @@
 typedef enum {
 	PRODUCE=0,
 	FETCH=1,
-	MULTIFETCH=2,
-	MULTIPRODUCE=3,
-	OFFSETS=4
+	OFFSET=2,
+	METADATA=3,
+	LEADER_AND_ISR=4,
+	STOP_REPLICA=5,
+	OFFSET_COMMIT=6,
+	OFFSET_FETCH=7
 } kafka_request_types;
 
 /* buffer.c */
@@ -52,6 +55,7 @@ typedef struct {
 } KafkaBuffer;
 
 KafkaBuffer *KafkaBufferNew(size_t size);
+void KafkaBufferFree(KafkaBuffer *buffer);
 size_t KafkaBufferReserve(KafkaBuffer *buffer, size_t size);
 size_t KafkaBufferResize(KafkaBuffer *buffer);
 
@@ -85,7 +89,7 @@ typedef struct {
 	int16_t apikey;
 	int16_t apiversion;
 	int32_t correlation_id;
-} __attribute__((packed)) request_message_header_t;
+} __attribute__((packed)) request_header_t;
 
 typedef struct {
 	int32_t partition;
@@ -169,6 +173,10 @@ int produce_request_append(struct kafka_producer *p, produce_request_t *req,
  *     }
  * }
  */
+
+/* metadata/metadata_request.c */
+
+void topic_metadata_request(json_t *broker, const char **topics);
 
 /**
  * OBJ stuff taken from miniobj.h in Varnish. Written by PHK.

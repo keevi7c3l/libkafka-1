@@ -24,9 +24,6 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <arpa/inet.h>
-#include <string.h>
-#include <assert.h>
 #include <kafka.h>
 #include "../kafka-private.h"
 #include "../vector.h"
