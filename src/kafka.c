@@ -48,8 +48,3 @@ kafka_status_string(int status)
 	}
 	return statuses[status].status;
 }
-
-KAFKA_EXPORT int kafka_foo(void)
-{
-	return 0;
-}

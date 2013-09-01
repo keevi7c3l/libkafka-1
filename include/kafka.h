@@ -45,7 +45,6 @@ struct kafka_producer;
 struct kafka_message;
 
 /* kafka.c */
-int kafka_foo(void);
 const char *kafka_status_string(int status);
 
 /* producer/producer.c */
