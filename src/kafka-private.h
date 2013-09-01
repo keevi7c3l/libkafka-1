@@ -36,6 +36,14 @@
 
 #define KAFKA_EXPORT __attribute__((visibility("default")))
 
+typedef enum {
+	PRODUCE=0,
+	FETCH=1,
+	MULTIFETCH=2,
+	MULTIPRODUCE=3,
+	OFFSETS=4
+} kafka_request_types;
+
 /* buffer.c */
 typedef struct {
 	size_t alloced;
@@ -136,8 +144,12 @@ void producer_watch_broker_topics(zhandle_t *zp, int type, int state,
 void watch_topic_partition_state(zhandle_t *zp, int type, int state,
 				const char *path, void *ctx);
 
-/* producer/request.c */
-enum {PRODUCE=0, FETCH=1, MULTIFETCH=2, MULTIPRODUCE=3, OFFSETS=4};
+/* producer/produce_request.c */
+
+produce_request_t *produce_request_new(int16_t sync);
+void produce_request_free(produce_request_t *r);
+int produce_request_append(struct kafka_producer *p, produce_request_t *req,
+			struct kafka_message *msg);
 
 /*
  * {
@@ -157,11 +169,6 @@ enum {PRODUCE=0, FETCH=1, MULTIFETCH=2, MULTIPRODUCE=3, OFFSETS=4};
  *     }
  * }
  */
-
-produce_request_t *produce_request_new(int16_t sync);
-void produce_request_free(produce_request_t *r);
-int produce_request_append(struct kafka_producer *p, produce_request_t *req,
-			struct kafka_message *msg);
 
 /**
  * OBJ stuff taken from miniobj.h in Varnish. Written by PHK.
