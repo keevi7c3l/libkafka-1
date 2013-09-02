@@ -45,6 +45,10 @@ static json_t *kp_broker_by_id(struct kafka_producer *p, int id);
 KAFKA_EXPORT struct kafka_producer *
 kafka_producer_new(const char *zkServer)
 {
+	/**
+	 * @todo With the addition of metadata requests, getting metadata from
+	 * zookeeper can go away.
+	 */
 	int rc;
 	struct kafka_producer *p;
 
@@ -71,8 +75,10 @@ kafka_producer_new(const char *zkServer)
 		goto finish;
 	}
 
+	/* query for metadata */
+	topic_metadata_response_t *metadata;
 	void *iter = json_object_iter(p->brokers);
-	topic_metadata_request(json_object_iter_value(iter), NULL);
+	metadata = topic_metadata_request(json_object_iter_value(iter), NULL);
 
 	if (kp_init_topics(p) == -1) {
 		p->res = KAFKA_TOPICS_INIT_ERROR;
@@ -144,11 +150,13 @@ send_request(struct kafka_producer *p, json_t *broker, produce_request_t *req)
 	assert(write(fd, buffer->data, buffer->len) == buffer->len);
 	KafkaBufferFree(buffer);
 
-	char rbuf[1024];
-	size_t bufsize;
-	bufsize = read(fd, rbuf, sizeof rbuf);
-	printf("received:\n");
-	print_bytes(rbuf, bufsize);
+	if (req->acks != KAFKA_REQUEST_ASYNC) {
+		char rbuf[1024];
+		size_t bufsize;
+		bufsize = read(fd, rbuf, sizeof rbuf);
+		printf("received:\n");
+		print_bytes(rbuf, bufsize);
+	}
 }
 
 KAFKA_EXPORT int

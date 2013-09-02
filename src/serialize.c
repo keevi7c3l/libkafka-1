@@ -29,6 +29,46 @@
 #include "serialize.h"
 
 inline size_t
+uint8_unpack(uint8_t *ptr, uint8_t *value)
+{
+	memcpy(value, ptr, 1);
+	return 1;
+}
+
+inline size_t
+uint16_unpack(uint8_t *ptr, uint16_t *value)
+{
+	uint16_t v;
+	memcpy(&v, ptr, 2);
+	*value = ntohs(v);
+	return 2;
+}
+
+inline size_t
+uint32_unpack(uint8_t *ptr, uint32_t *value)
+{
+	uint32_t v;
+	memcpy(&v, ptr, 4);
+	*value = ntohl(v);
+	return 4;
+}
+
+inline size_t
+string_unpack(uint8_t *ptr, char **value)
+{
+	/**
+	 * creates a new string that must be freed.
+	 */
+	char *v;
+	int16_t len;
+	uint16_unpack(ptr, &len);
+	v = calloc(len+1, 1);
+	memcpy(v, ptr+2, len);
+	*value = v;
+	return 2 + len;
+}
+
+inline size_t
 uint8_pack(uint8_t value, uint8_t *ptr)
 {
 	memcpy(ptr, &value, 1);
@@ -196,8 +236,10 @@ produce_request_serialize(produce_request_t *req, KafkaBuffer *buffer)
 		/* prefix, str, sizeof num partitions */
 		topicLen = 2 + strlen(topic->topic) + 4;
 		KafkaBufferReserve(buffer, topicLen);
-		buffer->len += string_pack(topic->topic, &buffer->data[buffer->len]);
-		buffer->len += uint32_pack(count_keys(topic->partitions), &buffer->data[buffer->len]);
+		buffer->len += string_pack(topic->topic,
+					&buffer->data[buffer->len]);
+		buffer->len += uint32_pack(count_keys(topic->partitions),
+					&buffer->data[buffer->len]);
 		serialize_topic_partitions_to_buffer(topic, buffer);
 	}
 

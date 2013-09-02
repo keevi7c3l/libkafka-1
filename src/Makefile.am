@@ -27,6 +27,7 @@ libkafka_la_SOURCES = \
 	message.c \
 	serialize.c \
 	buffer.c \
+	metadata/partition_metadata.c \
 	metadata/metadata_request.c \
 	producer/produce_request.c \
 	producer/producer.c \

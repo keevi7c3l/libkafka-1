@@ -52,6 +52,7 @@ typedef struct {
 	size_t alloced;
 	size_t len;
 	uint8_t *data;
+	uint8_t *cur;
 } KafkaBuffer;
 
 KafkaBuffer *KafkaBufferNew(size_t size);
@@ -112,6 +113,37 @@ struct kafka_message {
 	bytestring_t *key;
 	bytestring_t *value;
 };
+
+typedef struct {
+	int32_t id;
+	char *hostname;
+	int32_t port;
+} broker_t;
+
+typedef struct {
+	int16_t error;
+	int32_t partition_id;
+	broker_t *leader;
+	hashtable_t *replicas;
+	hashtable_t *isr;
+} partition_metadata_t;
+
+typedef struct {
+	char *topic;
+	partition_metadata_t **partitions_metadata;
+	int16_t error;
+} topic_metadata_t;
+
+typedef struct {
+	hashtable_t *brokers;
+	hashtable_t *topicsMetadata;
+} topic_metadata_response_t;
+
+/* metadata/partition_metadata.c */
+partition_metadata_t *partition_metadata_new(int32_t partition_id, broker_t *broker,
+					hashtable_t *replicas, hashtable_t *isr, int16_t error);
+partition_metadata_t *partition_metadata_from_buffer(KafkaBuffer *buffer,
+						hashtable_t *brokers);
 
 /* broker.c */
 json_t *broker_map_new(zhandle_t *zh, struct String_vector *v);
@@ -176,7 +208,7 @@ int produce_request_append(struct kafka_producer *p, produce_request_t *req,
 
 /* metadata/metadata_request.c */
 
-void topic_metadata_request(json_t *broker, const char **topics);
+topic_metadata_response_t *topic_metadata_request(json_t *broker, const char **topics);
 
 /**
  * OBJ stuff taken from miniobj.h in Varnish. Written by PHK.

@@ -28,7 +28,84 @@
 #include <string.h>
 #include "../kafka-private.h"
 
-void
+static void
+print_broker(broker_t *broker)
+{
+	printf("%d %s:%d\n", broker->id, broker->hostname, broker->port);
+}
+
+static topic_metadata_t *
+topic_metadata_new(char *topic, partition_metadata_t **partitionsMetadata,
+		int16_t error)
+{
+	topic_metadata_t *t;
+	t = calloc(1, sizeof *t);
+	t->topic = topic;
+	t->partitions_metadata = partitionsMetadata;
+	t->error = error;
+	return t;
+}
+
+static topic_metadata_t *
+topic_metadata_from_buffer(KafkaBuffer *buffer, hashtable_t *brokers)
+{
+	int32_t i, numPartitions;
+	int16_t errCode;
+	char *topic;
+	partition_metadata_t **partitions;
+	buffer->cur += uint16_unpack(buffer->cur, &errCode);
+	buffer->cur += string_unpack(buffer->cur, &topic);
+	buffer->cur += uint32_unpack(buffer->cur, &numPartitions);
+	partitions = calloc(numPartitions, sizeof *partitions);
+	for (i = 0; i < numPartitions; i++) {
+		partitions[i] = partition_metadata_from_buffer(buffer, brokers);
+	}
+	return topic_metadata_new(topic, partitions, errCode);
+}
+
+static topic_metadata_response_t *
+parse_topic_metadata_response(KafkaBuffer *buffer)
+{
+	/**
+	 * @todo: return brokers and topics metadata.
+	 */
+	uint8_t *ptr;
+	int32_t correlation_id;
+	int32_t i, j, numBrokers, numTopics;
+	topic_metadata_response_t *resp;
+
+	resp = calloc(1, sizeof *resp);
+	resp->brokers = hashtable_create(jenkins, keycmp, free, NULL);
+	resp->topicsMetadata = hashtable_create(jenkins, keycmp, NULL, NULL);
+
+	buffer->cur += uint32_unpack(buffer->cur, &correlation_id);
+	buffer->cur += uint32_unpack(buffer->cur, &numBrokers);
+
+	/* load brokers */
+	for (i = 0; i < numBrokers; i++) {
+		char bstr[33];
+		broker_t *b;
+		b = calloc(1, sizeof *b);
+		buffer->cur += uint32_unpack(buffer->cur, &b->id);
+		buffer->cur += string_unpack(buffer->cur, &b->hostname);
+		buffer->cur += uint32_unpack(buffer->cur, &b->port);
+		memset(bstr, 0, sizeof bstr);
+		snprintf(bstr, sizeof bstr, "%d", b->id);
+		hashtable_set(resp->brokers, strdup(bstr), b);
+	}
+
+	/* Read Topic Metadata */
+	buffer->cur += uint32_unpack(buffer->cur, &numTopics);
+	for (i = 0; i < numTopics; i++) {
+		topic_metadata_t *topic;
+		topic = topic_metadata_from_buffer(buffer, resp->brokers);
+		hashtable_set(resp->topicsMetadata, topic->topic, topic);
+	}
+	assert(buffer->cur - buffer->data == buffer->len);
+	return resp;
+}
+
+topic_metadata_response_t *
 topic_metadata_request(json_t *broker, const char **topics)
 {
 	/**
@@ -48,7 +125,7 @@ topic_metadata_request(json_t *broker, const char **topics)
 	len = sizeof header;
 	len += 2 + strlen(client);
 
-	len += 4; /* number of topics */
+	len += 4; /* number of topics (size in bytes) */
 	if (topics) {
 		while (topics[numTopics]) {
 			len += 2 + strlen(topics[numTopics]);
@@ -69,17 +146,22 @@ topic_metadata_request(json_t *broker, const char **topics)
 	/* write header size */
 	uint32_pack(buffer->len - 4, &buffer->data[0]);
 
-	printf("metadata request\n");
-	print_bytes(buffer->data, buffer->len);
-
+	/* send metadata request */
 	int fd = json_integer_value(json_object_get(broker, "fd"));
 	assert(write(fd, buffer->data, buffer->len) == buffer->len);
 	KafkaBufferFree(buffer);
 
-	char rbuf[1024];
-	size_t bufsize;
-	bufsize = read(fd, rbuf, sizeof rbuf);
-	printf("metadata response:\n");
-	printf("%ld\n", bufsize);
-	print_bytes(rbuf, bufsize);
+	/* read metadata response */
+	int32_t size = 0;
+	read(fd, &size, sizeof(int32_t));
+	size = ntohl(size);
+
+	topic_metadata_response_t *resp;
+	buffer = KafkaBufferNew(size);
+	assert(read(fd, buffer->data, buffer->alloced) == size);
+	buffer->len = buffer->alloced;
+	buffer->cur = buffer->data;
+	resp = parse_topic_metadata_response(buffer);
+	KafkaBufferFree(buffer);
+	return resp;
 }
