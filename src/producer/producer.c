@@ -142,9 +142,6 @@ send_request(struct kafka_producer *p, json_t *broker, produce_request_t *req)
 	/* TODO: do actual sending in kafka_producer_send() */
 	int fd;
 	fd = json_integer_value(json_object_get(broker, "fd"));
-	printf("sending to broker: %s:%" JSON_INTEGER_FORMAT "\n",
-		json_string_value(json_object_get(broker, "host")),
-		json_integer_value(json_object_get(broker, "port")));
 
 	print_bytes(buffer->data, buffer->len);
 	assert(write(fd, buffer->data, buffer->len) == buffer->len);
@@ -154,8 +151,6 @@ send_request(struct kafka_producer *p, json_t *broker, produce_request_t *req)
 		char rbuf[1024];
 		size_t bufsize;
 		bufsize = read(fd, rbuf, sizeof rbuf);
-		printf("received:\n");
-		print_bytes(rbuf, bufsize);
 	}
 }
 
@@ -191,7 +186,6 @@ kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg,
 		return -1;
 	json_t *partition = json_object_get(t, partStr);
 	int brokerId = json_integer_value(json_object_get(partition, "leader"));
-	printf("BrokerId: %d\n", brokerId);
 	json_t *broker = kp_broker_by_id(p, brokerId);
 	if (!broker)
 		return -1;
@@ -205,7 +199,6 @@ kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg,
 	part = calloc(1, sizeof *part);
 	part->messages = vector_new(1, NULL);
 	part->partition = topic_partition;
-	printf("partition: %d\n", topic_partition);
 
 	vector_push_back(part->messages, msg);
 
