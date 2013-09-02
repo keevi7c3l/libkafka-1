@@ -164,7 +164,7 @@ jenkins(const void *key)
 int
 keycmp(const void *a, const void *b)
 {
-	const char **aa = (const char **)a;
-	const char **bb = (const char **)b;
-	return strcmp(*aa, *bb) == 0;
+	const char *aa = (const char *)a;
+	const char *bb = (const char *)b;
+	return strcmp(aa, bb) == 0;
 }
