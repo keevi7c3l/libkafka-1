@@ -12,3 +12,5 @@ For setting up a dev cluster on a single box, I used this as an example: [Runnin
 
 I'm also documenting the wire protocol as I go along. Documentation can be found
 under the docs/ directory in this repo.
+
+*Warning!* This isn't ready for primetime yet unless you're feeling adventurous.

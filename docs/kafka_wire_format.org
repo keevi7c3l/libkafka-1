@@ -12,7 +12,7 @@
 #+STYLE: a {text-decoration: none;}
 #+STYLE: </style>
 
-by David Reynolds on August 22, 2013
+by David Reynolds on September 2, 2013
 
 This is a work in progress. The [[https://cwiki.apache.org/confluence/display/KAFKA/A+Guide+To+The+Kafka+Protocol][Kafka v0.8 Protocol Documentation]] is a good
 place to start. For my work on libkafka I need more in-depth docs that have
@@ -56,6 +56,102 @@ CLIENT ID      string
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+                               /
 /                       CLIENT ID (cont'd)                      /
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+#+END_SRC
+
+* Metadata Request Format
+
+Metadata requests are used to determine which topics and partitions each
+broker is responsible for. It can be sent to any broker in the cluster. A client
+may want metadata for a subset of topics or for every topic.
+
+#+BEGIN_SRC c
+NUM TOPICS     int32
+LIST OF TOPICS [string]
+
+A metadata request with two topics would look like this:
+
+ 0             1               2               3               4
+ 0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7 0 1 2 3 4 5 6 7
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                           NUM TOPICS                          |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|         TOPIC LENGTH          |             TOPIC             /
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+                               /
+/                        TOPIC (cont'd)                         /
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|         TOPIC LENGTH          |             TOPIC             /
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+                               /
+/                        TOPIC (cont'd)                         /
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+#+END_SRC
+
+* Metadata Request Example - All Topics
+
+#+BEGIN_SRC c
+size: 22 (0x00 0x00 0x00 0x16)
+#+END_SRC
+
+** Request Header
+
+#+BEGIN_SRC c
+api key:        3 (0x00 0x03)
+api version:    0 (0x00 0x00)
+correlation id: 1 (0x00 0x00 0x00 0x01)
+client id:      "libkafka" (0x00 0x08 0x6C 0x69 0x62 0x6B 0x61 0x66 0x6B 0x61)
+#+END_SRC
+
+** Metadata Request
+
+#+BEGIN_SRC c
+num topics: 0 (0x00 0x00 0x00 0x00)
+#+END_SRC
+
+** Hex Dump
+
+#+BEGIN_SRC c
+0x00 0x00 0x00 0x16
+0x00 0x03 0x00 0x00 0x00 0x00 0x00 0x01
+0x00 0x08 0x6C 0x69 0x62 0x6B 0x61 0x66 0x6B 0x61
+0x00 0x00 0x00 0x00
+#+END_SRC
+
+* Metadata Request Example - Two Topics
+
+#+BEGIN_SRC c
+size: 36 (0x00 0x00 0x00 0x24)
+#+END_SRC
+
+** Request Header
+
+#+BEGIN_SRC c
+api key:        3 (0x00 0x03)
+api version:    0 (0x00 0x00)
+correlation id: 1 (0x00 0x00 0x00 0x01)
+client id:      "libkafka" (0x00 0x08 0x6C 0x69 0x62 0x6B 0x61 0x66 0x6B 0x61)
+#+END_SRC
+
+** Metadata Request
+
+#+BEGIN_SRC c
+num topics: 2 (0x00 0x00 0x00 0x02)
+#+END_SRC
+
+*** Topics
+
+#+BEGIN_SRC c
+"test":   0x00 0x04 0x74 0x65 0x73 0x74
+"foobar": 0x00 0x06 0x66 0x6F 0x6F 0x62 0x61 0x72
+#+END_SRC
+
+** Hex Dump
+
+#+BEGIN_SRC c
+0x00 0x00 0x00 0x24
+0x00 0x03 0x00 0x00 0x00 0x00 0x00 0x01
+0x00 0x08 0x6C 0x69 0x62 0x6B 0x61 0x66 0x6B 0x61
+0x00 0x00 0x00 0x02
+0x00 0x04 0x74 0x65 0x73 0x74
+0x00 0x06 0x66 0x6F 0x6F 0x62 0x61 0x72
 #+END_SRC
 
 * Produce Request Format
