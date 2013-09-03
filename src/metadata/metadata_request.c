@@ -26,6 +26,7 @@
 
 #include <assert.h>
 #include <string.h>
+#include <errno.h>
 #include "../kafka-private.h"
 
 static void
@@ -66,9 +67,6 @@ topic_metadata_from_buffer(KafkaBuffer *buffer, hashtable_t *brokers)
 static topic_metadata_response_t *
 parse_topic_metadata_response(KafkaBuffer *buffer)
 {
-	/**
-	 * @todo: return brokers and topics metadata.
-	 */
 	uint8_t *ptr;
 	int32_t correlation_id;
 	int32_t i, j, numBrokers, numTopics;
@@ -148,12 +146,22 @@ topic_metadata_request(broker_t *broker, const char **topics)
 	uint32_pack(buffer->len - 4, &buffer->data[0]);
 
 	/* send metadata request */
-	assert(write(broker->fd, buffer->data, buffer->len) == buffer->len);
+	int rc;
+	do {
+		rc = write(broker->fd, buffer->data, buffer->len);
+	} while (rc == -1 && errno == EINTR);
+	if (rc == -1)
+		return NULL;
+	assert(rc == buffer->len);
 	KafkaBufferFree(buffer);
 
 	/* read metadata response */
 	int32_t size = 0;
-	read(broker->fd, &size, sizeof(int32_t));
+	do {
+		rc = read(broker->fd, &size, sizeof(int32_t));
+	} while (rc == -1 && errno == EINTR);
+	if (rc == -1)
+		return NULL;
 	size = ntohl(size);
 
 	topic_metadata_response_t *resp;

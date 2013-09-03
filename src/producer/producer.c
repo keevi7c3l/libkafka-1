@@ -80,14 +80,19 @@ kafka_producer_new(const char *zkServer)
 	/* query for metadata */
 	topic_metadata_response_t *metadata_resp;
 	void *iter = json_object_iter(brokers);
-	json_t *obj = json_object_iter_value(iter);
-	broker_t broker;
-	broker.hostname = (char *)json_string_value(json_object_get(obj, "host"));
-	broker.port = json_integer_value(json_object_get(obj, "port"));
-	broker.id = json_integer_value(json_object_get(obj, "id"));
-	broker_connect(&broker);
-	metadata_resp = topic_metadata_request(&broker, NULL);
-	close(broker.fd);
+	for (; iter; iter = json_object_iter_next(brokers, iter)) {
+		json_t *obj = json_object_iter_value(iter);
+		broker_t broker;
+		memset(&broker, 0, sizeof broker);
+		broker.hostname = (char *)json_string_value(json_object_get(obj, "host"));
+		broker.port = json_integer_value(json_object_get(obj, "port"));
+		broker.id = json_integer_value(json_object_get(obj, "id"));
+		broker_connect(&broker);
+		metadata_resp = topic_metadata_request(&broker, NULL);
+		close(broker.fd);
+		if (metadata_resp)
+			break;
+	}
 	json_decref(brokers);
 
 	p->brokers = metadata_resp->brokers;
