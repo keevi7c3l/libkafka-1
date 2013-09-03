@@ -67,7 +67,6 @@ kafka_producer_new(const char *zkServer)
 	}
 
 	p->magic = KAFKA_PRODUCER_MAGIC;
-	pthread_mutex_init(&p->mtx, NULL);
 
 	brokers = bootstrap_brokers(p->zh);
 	if (!brokers) {
@@ -226,7 +225,6 @@ kafka_producer_free(struct kafka_producer *p)
 	}
 	hashtable_destroy(p->brokers);
 	hashtable_destroy(p->metadata);
-	pthread_mutex_destroy(&p->mtx);
 	free(p);
 }
 

@@ -99,7 +99,6 @@ struct kafka_producer {
 	clientid_t cid;
 	hashtable_t *brokers;
 	hashtable_t *metadata;
-	pthread_mutex_t mtx;
 	int res;
 };
 
