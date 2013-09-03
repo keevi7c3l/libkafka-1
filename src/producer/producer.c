@@ -158,7 +158,7 @@ kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg,
 		int16_t sync)
 {
 	/**
-	 * Kafka provides a few differeny synchronization levels.
+	 * Kafka provides a few different synchronization levels.
 	 * - KAFKA_REQUEST_ASYNC: no ack response
 	 * - KAFKA_REQUEST_SYNC: ack response after message is written to log
 	 * - KAFKA_REQUEST_FULL_SYNC: ack response after full replication
