@@ -37,10 +37,10 @@
 
 #include "../jansson/jansson.h"
 
-static int kp_init_brokers(struct kafka_producer *p);
+static json_t *bootstrap_brokers(zhandle_t *zh);
 static int kp_init_topics(struct kafka_producer *p);
 static int kp_init_topics_partitions(struct kafka_producer *p);
-static json_t *kp_broker_by_id(struct kafka_producer *p, int id);
+static broker_t *kp_broker_by_id(struct kafka_producer *p, int id);
 
 KAFKA_EXPORT struct kafka_producer *
 kafka_producer_new(const char *zkServer)
@@ -51,6 +51,7 @@ kafka_producer_new(const char *zkServer)
 	 */
 	int rc;
 	struct kafka_producer *p;
+	json_t *brokers;
 
 	srand(time(0));
 
@@ -70,15 +71,27 @@ kafka_producer_new(const char *zkServer)
 	p->magic = KAFKA_PRODUCER_MAGIC;
 	pthread_mutex_init(&p->mtx, NULL);
 
-	if (kp_init_brokers(p) == -1) {
+	brokers = bootstrap_brokers(p->zh);
+	if (!brokers) {
 		p->res = KAFKA_BROKER_INIT_ERROR;
 		goto finish;
 	}
 
 	/* query for metadata */
-	topic_metadata_response_t *metadata;
-	void *iter = json_object_iter(p->brokers);
-	metadata = topic_metadata_request(json_object_iter_value(iter), NULL);
+	topic_metadata_response_t *metadata_resp;
+	void *iter = json_object_iter(brokers);
+	json_t *obj = json_object_iter_value(iter);
+	broker_t broker;
+	broker.hostname = (char *)json_string_value(json_object_get(obj, "host"));
+	broker.port = json_integer_value(json_object_get(obj, "port"));
+	broker.id = json_integer_value(json_object_get(obj, "id"));
+	broker_connect(&broker);
+	metadata_resp = topic_metadata_request(&broker, NULL);
+	close(broker.fd);
+	json_decref(brokers);
+
+	p->brokers = metadata_resp->brokers;
+	p->metadata = metadata_resp->topicsMetadata;
 
 	if (kp_init_topics(p) == -1) {
 		p->res = KAFKA_TOPICS_INIT_ERROR;
@@ -134,22 +147,19 @@ pick_random_partition(struct kafka_producer *p, struct kafka_message *msg)
 }
 
 static int
-send_request(struct kafka_producer *p, json_t *broker, produce_request_t *req)
+send_request(struct kafka_producer *p, broker_t *broker, produce_request_t *req)
 {
 	KafkaBuffer *buffer = KafkaBufferNew(0);
 	produce_request_serialize(req, buffer);
 
 	/* TODO: do actual sending in kafka_producer_send() */
-	int fd;
-	fd = json_integer_value(json_object_get(broker, "fd"));
-
-	assert(write(fd, buffer->data, buffer->len) == buffer->len);
+	assert(write(broker->fd, buffer->data, buffer->len) == buffer->len);
 	KafkaBufferFree(buffer);
 
 	if (req->acks != KAFKA_REQUEST_ASYNC) {
 		char rbuf[1024];
 		size_t bufsize;
-		bufsize = read(fd, rbuf, sizeof rbuf);
+		bufsize = read(broker->fd, rbuf, sizeof rbuf);
 	}
 }
 
@@ -185,7 +195,7 @@ kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg,
 		return -1;
 	json_t *partition = json_object_get(t, partStr);
 	int brokerId = json_integer_value(json_object_get(partition, "leader"));
-	json_t *broker = kp_broker_by_id(p, brokerId);
+	broker_t *broker = kp_broker_by_id(p, brokerId);
 	if (!broker)
 		return -1;
 
@@ -218,36 +228,43 @@ kafka_producer_free(struct kafka_producer *p)
 		zookeeper_close(p->zh);
 	json_decref(p->topics);
 
-	iter = json_object_iter(p->brokers);
-	for (; iter; iter = json_object_iter_next(p->brokers, iter)) {
+	iter = hashtable_iter(p->brokers);
+	for (; iter; iter = hashtable_iter_next(p->brokers, iter)) {
 		int fd;
-		json_t *obj = json_object_iter_value(iter);
-		json_t *v = json_object_get(obj, "fd");
-		if (v) {
-			fd = json_integer_value(v);
-			close(fd);
+		broker_t *broker = hashtable_iter_value(iter);
+		if (broker) {
+			close(broker->fd);
 		}
 	}
-	json_decref(p->brokers);
+	hashtable_destroy(p->brokers);
+	hashtable_destroy(p->metadata);
 	json_decref(p->topics);
 	pthread_mutex_destroy(&p->mtx);
 	free(p);
 }
 
-static int
-kp_init_brokers(struct kafka_producer *p)
+static json_t *
+bootstrap_brokers(zhandle_t *zh)
 {
-	int rc;
+	int rc, i;
 	struct String_vector ids;
-	rc = zoo_wget_children(p->zh, "/brokers/ids",
-			producer_watch_broker_ids, p, &ids);
+	json_t *js;
+	rc = zoo_get_children(zh, "/brokers/ids", 0, &ids);
 	if (rc != ZOK || ids.count == 0)
-		return -1;
-	pthread_mutex_lock(&p->mtx);
-	p->brokers = broker_map_new(p->zh, &ids);
-	pthread_mutex_unlock(&p->mtx);
-	free_String_vector(&ids);
-	return 0;
+		return NULL;
+	js = json_object();
+	for (i = 0; i < ids.count; i++) {
+		char *znode;
+		json_t *broker;
+		znode = string_builder("/brokers/ids/%s", ids.data[i]);
+		assert(znode);
+		broker = get_json_from_znode(zh, znode);
+		free(znode);
+		if (broker) {
+			json_object_set(js, ids.data[i], broker);
+		}
+	}
+	return js;
 }
 
 static int
@@ -296,11 +313,11 @@ kp_init_topics_partitions(struct kafka_producer *p)
 	return 0;
 }
 
-static json_t *
+static broker_t *
 kp_broker_by_id(struct kafka_producer *p, int id)
 {
 	char buf[33];
 	memset(buf, 0, sizeof buf);
 	snprintf(buf, sizeof buf, "%d", id);
-	return json_object_get(p->brokers, buf);
+	return hashtable_get(p->brokers, buf);
 }

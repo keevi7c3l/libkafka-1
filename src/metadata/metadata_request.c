@@ -89,6 +89,7 @@ parse_topic_metadata_response(KafkaBuffer *buffer)
 		buffer->cur += uint32_unpack(buffer->cur, &b->id);
 		buffer->cur += string_unpack(buffer->cur, &b->hostname);
 		buffer->cur += uint32_unpack(buffer->cur, &b->port);
+		broker_connect(b);
 		memset(bstr, 0, sizeof bstr);
 		snprintf(bstr, sizeof bstr, "%d", b->id);
 		hashtable_set(resp->brokers, strdup(bstr), b);
@@ -106,7 +107,7 @@ parse_topic_metadata_response(KafkaBuffer *buffer)
 }
 
 topic_metadata_response_t *
-topic_metadata_request(json_t *broker, const char **topics)
+topic_metadata_request(broker_t *broker, const char **topics)
 {
 	/**
 	 * @param topics NULL-terminated list of strings
@@ -147,18 +148,17 @@ topic_metadata_request(json_t *broker, const char **topics)
 	uint32_pack(buffer->len - 4, &buffer->data[0]);
 
 	/* send metadata request */
-	int fd = json_integer_value(json_object_get(broker, "fd"));
-	assert(write(fd, buffer->data, buffer->len) == buffer->len);
+	assert(write(broker->fd, buffer->data, buffer->len) == buffer->len);
 	KafkaBufferFree(buffer);
 
 	/* read metadata response */
 	int32_t size = 0;
-	read(fd, &size, sizeof(int32_t));
+	read(broker->fd, &size, sizeof(int32_t));
 	size = ntohl(size);
 
 	topic_metadata_response_t *resp;
 	buffer = KafkaBufferNew(size);
-	assert(read(fd, buffer->data, buffer->alloced) == size);
+	assert(read(broker->fd, buffer->data, buffer->alloced) == size);
 	buffer->len = buffer->alloced;
 	buffer->cur = buffer->data;
 	resp = parse_topic_metadata_response(buffer);

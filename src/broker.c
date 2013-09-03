@@ -46,100 +46,30 @@ gethostaddress(const struct hostent *h)
 	return inet_addr(inet_ntoa(*list[0]));
 }
 
-static int
-broker_connect(json_t *broker)
+int
+broker_connect(broker_t *broker)
 {
 	int fd;
 	unsigned slen;
 	unsigned long hostaddr;
 	struct sockaddr_in sin;
 	struct hostent *he;
-	const char *host;
-	int port;
-	host = json_string_value(json_object_get(broker, "host"));
-	port = json_integer_value(json_object_get(broker, "port"));
-	he = gethostbyname(host);
+	he = gethostbyname(broker->hostname);
 	if (!he)
 		return -1;
 	hostaddr = gethostaddress(he);
 	slen = sizeof sin;
 	memset(&sin, 0, slen);
 	sin.sin_family = AF_INET;
-	sin.sin_port = htons(port);
+	sin.sin_port = htons(broker->port);
 	sin.sin_addr.s_addr = hostaddr;
 	fd = socket(AF_INET, SOCK_STREAM, 0);
 	if (fd == -1)
 		return -1;
 	if (connect(fd, (struct sockaddr *)&sin, slen) == -1)
 		return -1;
+	broker->fd = fd;
 	return fd;
-}
-
-json_t *
-get_json_from_znode(zhandle_t *zh, const char *znode)
-{
-	int rc;
-	json_t *js = NULL;
-	json_error_t err;
-	char buf[1024];
-	int len = sizeof buf;
-	memset(buf, 0, len);
-	rc = zoo_get(zh, znode, 0, buf, &len, NULL);
-	assert((size_t)len < sizeof buf);
-	if (rc == ZOK) {
-		js = json_loads(buf, 0, &err);
-	}
-	return js;
-}
-
-json_t *
-wget_json_from_znode(zhandle_t *zh, const char *znode, watcher_fn watcher,
-		void *ctx)
-{
-	/**
-	 * watcher gets triggered when the znode's underlying data changes.
-	 */
-	int rc;
-	json_t *js = NULL;
-	json_error_t err;
-	char buf[1024];
-	int len = sizeof buf;
-	memset(buf, 0, len);
-	rc = zoo_wget(zh, znode, watcher, ctx, buf, &len, NULL);
-	assert((size_t)len < sizeof buf);
-	if (rc == ZOK) {
-		js = json_loads(buf, 0, &err);
-	}
-	return js;
-}
-
-json_t *
-broker_map_new(zhandle_t *zh, struct String_vector *v)
-{
-	int i, rc;
-	json_t *out = json_object();
-	for (i = 0; i < v->count; i++) {
-		int fd;
-		char *znode;
-		json_t *broker;
-		json_error_t err;
-
-		znode = string_builder("/brokers/ids/%s", v->data[i]);
-		assert(znode);		
-		broker = get_json_from_znode(zh, znode);
-		free(znode);
-
-		if (broker) {
-			fd = broker_connect(broker);
-			if (fd != -1) {
-				json_object_set(broker, "fd", json_integer(fd));
-				json_object_set(out, v->data[i], broker);
-			} else {
-				json_decref(broker);
-			}
-		}
-	}
-	return out;
 }
 
 json_t *

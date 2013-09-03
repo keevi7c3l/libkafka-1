@@ -24,6 +24,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <assert.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -167,4 +168,42 @@ keycmp(const void *a, const void *b)
 	const char *aa = (const char *)a;
 	const char *bb = (const char *)b;
 	return strcmp(aa, bb) == 0;
+}
+
+json_t *
+get_json_from_znode(zhandle_t *zh, const char *znode)
+{
+	int rc;
+	json_t *js = NULL;
+	json_error_t err;
+	char buf[1024];
+	int len = sizeof buf;
+	memset(buf, 0, len);
+	rc = zoo_get(zh, znode, 0, buf, &len, NULL);
+	assert((size_t)len < sizeof buf);
+	if (rc == ZOK) {
+		js = json_loads(buf, 0, &err);
+	}
+	return js;
+}
+
+json_t *
+wget_json_from_znode(zhandle_t *zh, const char *znode, watcher_fn watcher,
+		void *ctx)
+{
+	/**
+	 * watcher gets triggered when the znode's underlying data changes.
+	 */
+	int rc;
+	json_t *js = NULL;
+	json_error_t err;
+	char buf[1024];
+	int len = sizeof buf;
+	memset(buf, 0, len);
+	rc = zoo_wget(zh, znode, watcher, ctx, buf, &len, NULL);
+	assert((size_t)len < sizeof buf);
+	if (rc == ZOK) {
+		js = json_loads(buf, 0, &err);
+	}
+	return js;
 }

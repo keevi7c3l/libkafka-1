@@ -52,29 +52,6 @@ producer_init_watcher(zhandle_t *zp, int type, int state, const char *path,
 }
 
 void
-producer_watch_broker_ids(zhandle_t *zp, int type, int state, const char *path,
-			void *ctx)
-{
-	/**
-	 * re-map brokers
-	 */
-	(void)state;
-	(void)path;
-	struct String_vector ids;
-	struct kafka_producer *p = (struct kafka_producer *)ctx;
-	if (type == ZOO_CHILD_EVENT) {
-		pthread_mutex_lock(&p->mtx);
-		if (p->brokers) {
-			json_decref(p->brokers);
-		}
-		zoo_wget_children(zp, "/brokers/ids",
-				producer_watch_broker_ids, p, &ids);
-		p->brokers = broker_map_new(p->zh, &ids);
-		pthread_mutex_unlock(&p->mtx);
-	}
-}
-
-void
 producer_watch_broker_topics(zhandle_t *zp, int type, int state,
 			const char *path, void *ctx)
 {
