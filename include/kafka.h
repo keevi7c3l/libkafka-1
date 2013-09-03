@@ -36,6 +36,7 @@
 #define KAFKA_BROKER_INIT_ERROR            4
 #define KAFKA_TOPICS_INIT_ERROR            5
 #define KAFKA_TOPICS_PARTITIONS_INIT_ERROR 6
+#define KAFKA_METADATA_ERROR               7
 
 #define KAFKA_REQUEST_ASYNC      0
 #define KAFKA_REQUEST_SYNC       1

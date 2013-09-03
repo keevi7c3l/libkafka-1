@@ -43,7 +43,7 @@ map_partition_replicas(KafkaBuffer *buffer, hashtable_t *brokers)
 		buffer->cur += uint32_unpack(buffer->cur, &replica_id);
 		assert(buffer->cur < &buffer->data[buffer->len]);
 		snprintf(str, sizeof str, "%d", replica_id);
-		hashtable_set(r, str, hashtable_get(brokers, str));
+		hashtable_set(r, strdup(str), hashtable_get(brokers, str));
 	}
 	return r;
 }
@@ -61,7 +61,7 @@ map_partition_isr(KafkaBuffer *buffer, hashtable_t *brokers)
 		memset(str, 0, sizeof str);
 		buffer->cur += uint32_unpack(buffer->cur, &isr_id);
 		snprintf(str, sizeof str, "%d", isr_id);
-		hashtable_set(isr, str, hashtable_get(brokers, str));
+		hashtable_set(isr, strdup(str), hashtable_get(brokers, str));
 	}
 	return isr;
 }

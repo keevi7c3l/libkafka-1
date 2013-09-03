@@ -82,7 +82,8 @@ typedef struct {
 
 typedef struct {
 	char *topic;
-	partition_metadata_t **partitions_metadata;
+	int32_t num_partitions;
+	hashtable_t *partitions;
 	int16_t error;
 } topic_metadata_t;
 
@@ -96,9 +97,9 @@ struct kafka_producer {
 #define KAFKA_PRODUCER_MAGIC 0xb5be14d0
 	zhandle_t *zh;
 	clientid_t cid;
-	json_t *topics;
+/*	json_t *topics;*/
 /*        json_t *brokers;*/
-	json_t *topicsPartitions;
+/*	json_t *topicsPartitions;*/
 	hashtable_t *brokers;
 	hashtable_t *metadata;
 	pthread_mutex_t mtx;
@@ -177,10 +178,6 @@ uint32_t crc32(uint32_t crc, const void *buf, size_t size);
 /* producer/watchers.c */
 void producer_init_watcher(zhandle_t *zp, int type, int state,
 			const char *path, void *ctx);
-void producer_watch_broker_topics(zhandle_t *zp, int type, int state,
-				const char *path, void *ctx);
-void watch_topic_partition_state(zhandle_t *zp, int type, int state,
-				const char *path, void *ctx);
 
 /* producer/produce_request.c */
 

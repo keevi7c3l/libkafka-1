@@ -93,25 +93,3 @@ topic_map_new(zhandle_t *zh, struct String_vector *v)
 	}
 	return out;
 }
-
-json_t *
-topic_partitions_map_new(struct kafka_producer *p, const char *topic,
-			struct String_vector *v)
-{
-	int i, rc;
-	json_t *out = json_object();
-	for (i = 0; i < v->count; i++) {
-		char *znode;
-		json_t *state;
-		znode = string_builder("/brokers/topics/%s/partitions/%s/state",
-				topic, v->data[i]);
-		assert(znode);
-		state = wget_json_from_znode(p->zh, znode,
-					watch_topic_partition_state, p);
-		if (state) {
-			json_object_set(out, v->data[i], state);
-		}
-		free(znode);
-	}
-	return out;
-}

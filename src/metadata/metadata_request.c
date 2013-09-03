@@ -36,13 +36,14 @@ print_broker(broker_t *broker)
 }
 
 static topic_metadata_t *
-topic_metadata_new(char *topic, partition_metadata_t **partitionsMetadata,
+topic_metadata_new(char *topic, int32_t num_partitions, hashtable_t *partitions,
 		int16_t error)
 {
 	topic_metadata_t *t;
 	t = calloc(1, sizeof *t);
 	t->topic = topic;
-	t->partitions_metadata = partitionsMetadata;
+	t->num_partitions = num_partitions;
+	t->partitions = partitions;
 	t->error = error;
 	return t;
 }
@@ -53,15 +54,20 @@ topic_metadata_from_buffer(KafkaBuffer *buffer, hashtable_t *brokers)
 	int32_t i, numPartitions;
 	int16_t errCode;
 	char *topic;
-	partition_metadata_t **partitions;
+	hashtable_t *partitions;
 	buffer->cur += uint16_unpack(buffer->cur, &errCode);
 	buffer->cur += string_unpack(buffer->cur, &topic);
 	buffer->cur += uint32_unpack(buffer->cur, &numPartitions);
-	partitions = calloc(numPartitions, sizeof *partitions);
+	partitions = hashtable_create(jenkins, keycmp, free, NULL);
 	for (i = 0; i < numPartitions; i++) {
-		partitions[i] = partition_metadata_from_buffer(buffer, brokers);
+		partition_metadata_t *part;
+		char id[33];
+		memset(id, 0, sizeof id);
+		part = partition_metadata_from_buffer(buffer, brokers);
+		snprintf(id, sizeof id, "%d", part->partition_id);
+		hashtable_set(partitions, strdup(id), part);
 	}
-	return topic_metadata_new(topic, partitions, errCode);
+	return topic_metadata_new(topic, numPartitions, partitions, errCode);
 }
 
 static topic_metadata_response_t *

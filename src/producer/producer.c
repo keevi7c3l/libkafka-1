@@ -38,8 +38,6 @@
 #include "../jansson/jansson.h"
 
 static json_t *bootstrap_brokers(zhandle_t *zh);
-static int kp_init_topics(struct kafka_producer *p);
-static int kp_init_topics_partitions(struct kafka_producer *p);
 static broker_t *kp_broker_by_id(struct kafka_producer *p, int id);
 
 KAFKA_EXPORT struct kafka_producer *
@@ -78,7 +76,7 @@ kafka_producer_new(const char *zkServer)
 	}
 
 	/* query for metadata */
-	topic_metadata_response_t *metadata_resp;
+	topic_metadata_response_t *metadata_resp = NULL;
 	void *iter = json_object_iter(brokers);
 	for (; iter; iter = json_object_iter_next(brokers, iter)) {
 		json_t *obj = json_object_iter_value(iter);
@@ -95,18 +93,13 @@ kafka_producer_new(const char *zkServer)
 	}
 	json_decref(brokers);
 
+	if (!metadata_resp) {
+		p->res = KAFKA_METADATA_ERROR;
+		goto finish;
+	}
+
 	p->brokers = metadata_resp->brokers;
 	p->metadata = metadata_resp->topicsMetadata;
-
-	if (kp_init_topics(p) == -1) {
-		p->res = KAFKA_TOPICS_INIT_ERROR;
-		goto finish;
-	}
-
-	if (kp_init_topics_partitions(p) == -1) {
-		p->res = KAFKA_TOPICS_PARTITIONS_INIT_ERROR;
-		goto finish;
-	}
 finish:
 	return p;
 }
@@ -120,35 +113,19 @@ kafka_producer_status(struct kafka_producer *p)
 	return p->res;
 }
 
-static int32_t
-count_kafka_partitions(json_t *partitions)
-{
-	void *iter;
-	int parts = 0;
-	if (!partitions)
-		return -1;
-	iter = json_object_iter(partitions);
-	for (; iter; iter = json_object_iter_next(partitions, iter)) {
-		parts++;
-	}
-	return parts;
-}
-
-static int32_t
+static partition_metadata_t *
 pick_random_partition(struct kafka_producer *p, struct kafka_message *msg)
 {
-	int32_t n;
-	json_t *topic, *partitions;
-	topic = json_object_get(p->topics, msg->topic);
+	int32_t part;
+	topic_metadata_t *topic;
+	char partStr[33];
+	memset(partStr, 0, sizeof partStr);
+	topic = hashtable_get(p->metadata, msg->topic);
 	if (!topic)
-		return -1;
-	partitions = json_object_get(topic, "partitions");
-	if (!partitions)
-		return -1;
-	n = count_kafka_partitions(partitions);
-	if (n <= 0)
-		return -1;
-	return rand() % n;
+		return NULL;
+	part = rand() % topic->num_partitions;
+	snprintf(partStr, sizeof partStr, "%d", part);
+	return hashtable_get(topic->partitions, partStr);
 }
 
 static int
@@ -191,16 +168,9 @@ kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg,
 	 *   serialize message into that request object
 	 */
 
-	char partStr[33];
-	memset(partStr, 0, sizeof partStr);
-	int32_t topic_partition = pick_random_partition(p, msg);
-	snprintf(partStr, sizeof partStr, "%d", topic_partition);
-	json_t *t = json_object_get(p->topicsPartitions, msg->topic);
-	if (!t)
-		return -1;
-	json_t *partition = json_object_get(t, partStr);
-	int brokerId = json_integer_value(json_object_get(partition, "leader"));
-	broker_t *broker = kp_broker_by_id(p, brokerId);
+	partition_metadata_t *partition = pick_random_partition(p, msg);
+	assert(partition);
+	broker_t *broker = partition->leader;
 	if (!broker)
 		return -1;
 
@@ -212,10 +182,13 @@ kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg,
 
 	part = calloc(1, sizeof *part);
 	part->messages = vector_new(1, NULL);
-	part->partition = topic_partition;
+	part->partition = partition->partition_id;
 
 	vector_push_back(part->messages, msg);
 
+	char partStr[33];
+	memset(partStr, 0, sizeof partStr);
+	snprintf(partStr, sizeof partStr, "%d", partition->partition_id);
 	hashtable_set(topic->partitions, strdup(partStr), part);
 	hashtable_set(req->topics_partitions, strdup(msg->topic), topic);
 
@@ -227,23 +200,34 @@ kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg,
 KAFKA_EXPORT void
 kafka_producer_free(struct kafka_producer *p)
 {
-	void *iter;
+	void *i, *j;
 	CHECK_OBJ_NOTNULL(p, KAFKA_PRODUCER_MAGIC);
 	if (p->zh)
 		zookeeper_close(p->zh);
-	json_decref(p->topics);
 
-	iter = hashtable_iter(p->brokers);
-	for (; iter; iter = hashtable_iter_next(p->brokers, iter)) {
+	i = hashtable_iter(p->brokers);
+	for (; i; i = hashtable_iter_next(p->brokers, i)) {
 		int fd;
-		broker_t *broker = hashtable_iter_value(iter);
+		broker_t *broker = hashtable_iter_value(i);
 		if (broker) {
 			close(broker->fd);
 		}
 	}
+
+	/* TODO: setup value free in hashtable_create so this can go away */
+	i = hashtable_iter(p->metadata);
+	for (; i; i = hashtable_iter_next(p->metadata, i)) {
+		topic_metadata_t *topic = hashtable_iter_value(i);
+		j = hashtable_iter(topic->partitions);
+		for (; j; j = hashtable_iter_next(topic->partitions, j)) {
+			partition_metadata_t *part = hashtable_iter_value(j);
+			hashtable_destroy(part->replicas);
+			hashtable_destroy(part->isr);
+		}
+		hashtable_destroy(topic->partitions);
+	}
 	hashtable_destroy(p->brokers);
 	hashtable_destroy(p->metadata);
-	json_decref(p->topics);
 	pthread_mutex_destroy(&p->mtx);
 	free(p);
 }
@@ -270,52 +254,6 @@ bootstrap_brokers(zhandle_t *zh)
 		}
 	}
 	return js;
-}
-
-static int
-kp_init_topics(struct kafka_producer *p)
-{
-	int rc;
-	struct String_vector topics;
-	rc = zoo_wget_children(p->zh, "/brokers/topics",
-			producer_watch_broker_topics, p, &topics);
-	if (rc != ZOK || topics.count == 0)
-		return -1;
-	pthread_mutex_lock(&p->mtx);
-	p->topics = topic_map_new(p->zh, &topics);
-	pthread_mutex_unlock(&p->mtx);
-	free_String_vector(&topics);
-	return 0;
-}
-
-static int
-kp_init_topics_partitions(struct kafka_producer *p)
-{
-	int rc;
-	void *iter;
-	struct String_vector v;
-
-	pthread_mutex_lock(&p->mtx);
-	if (p->topicsPartitions)
-		json_decref(p->topicsPartitions);
-
-	p->topicsPartitions = json_object();
-	iter = json_object_iter(p->topics);
-
-	for (; iter; iter = json_object_iter_next(p->topics, iter)) {
-		char *path;
-		const char *topic = json_object_iter_key(iter);
-		path = string_builder("/brokers/topics/%s/partitions", topic);
-		/* TODO: figure out if I should watch this znode */
-		rc = zoo_get_children(p->zh, path, 0, &v);
-		free(path);
-		if (rc == ZOK) {
-			json_t *partitions = topic_partitions_map_new(p, topic, &v);
-			json_object_set(p->topicsPartitions, topic, partitions);
-		}
-	}
-	pthread_mutex_unlock(&p->mtx);
-	return 0;
 }
 
 static broker_t *
