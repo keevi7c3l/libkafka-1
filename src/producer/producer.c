@@ -76,14 +76,9 @@ kafka_producer_new(const char *zkServer)
 	}
 
 	/* query for metadata */
-	const char *topics[] = {
-		"test",
-		"foobar",
-		NULL
-	};
 	topic_metadata_response_t *metadata;
 	void *iter = json_object_iter(p->brokers);
-	metadata = topic_metadata_request(json_object_iter_value(iter), topics);
+	metadata = topic_metadata_request(json_object_iter_value(iter), NULL);
 
 	if (kp_init_topics(p) == -1) {
 		p->res = KAFKA_TOPICS_INIT_ERROR;
