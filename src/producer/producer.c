@@ -148,7 +148,6 @@ send_request(struct kafka_producer *p, json_t *broker, produce_request_t *req)
 	int fd;
 	fd = json_integer_value(json_object_get(broker, "fd"));
 
-	print_bytes(buffer->data, buffer->len);
 	assert(write(fd, buffer->data, buffer->len) == buffer->len);
 	KafkaBufferFree(buffer);
 
