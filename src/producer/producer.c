@@ -37,19 +37,16 @@
 
 #include "../jansson/jansson.h"
 
+static topic_metadata_response_t *bootstrap_metadata(zhandle_t *zh);
 static json_t *bootstrap_brokers(zhandle_t *zh);
 static broker_t *kp_broker_by_id(struct kafka_producer *p, int id);
 
 KAFKA_EXPORT struct kafka_producer *
 kafka_producer_new(const char *zkServer)
 {
-	/**
-	 * @todo With the addition of metadata requests, getting metadata from
-	 * zookeeper can go away.
-	 */
 	int rc;
 	struct kafka_producer *p;
-	json_t *brokers;
+	topic_metadata_response_t *metadata_resp;
 
 	srand(time(0));
 
@@ -68,30 +65,7 @@ kafka_producer_new(const char *zkServer)
 
 	p->magic = KAFKA_PRODUCER_MAGIC;
 
-	brokers = bootstrap_brokers(p->zh);
-	if (!brokers) {
-		p->res = KAFKA_BROKER_INIT_ERROR;
-		goto finish;
-	}
-
-	/* query for metadata */
-	topic_metadata_response_t *metadata_resp = NULL;
-	void *iter = json_object_iter(brokers);
-	for (; iter; iter = json_object_iter_next(brokers, iter)) {
-		json_t *obj = json_object_iter_value(iter);
-		broker_t broker;
-		memset(&broker, 0, sizeof broker);
-		broker.hostname = (char *)json_string_value(json_object_get(obj, "host"));
-		broker.port = json_integer_value(json_object_get(obj, "port"));
-		broker.id = json_integer_value(json_object_get(obj, "id"));
-		broker_connect(&broker);
-		metadata_resp = topic_metadata_request(&broker, NULL);
-		close(broker.fd);
-		if (metadata_resp)
-			break;
-	}
-	json_decref(brokers);
-
+	metadata_resp = bootstrap_metadata(p->zh);
 	if (!metadata_resp) {
 		p->res = KAFKA_METADATA_ERROR;
 		goto finish;
@@ -226,6 +200,36 @@ kafka_producer_free(struct kafka_producer *p)
 	hashtable_destroy(p->brokers);
 	hashtable_destroy(p->metadata);
 	free(p);
+}
+
+static topic_metadata_response_t *
+bootstrap_metadata(zhandle_t *zh)
+{
+	void *iter;
+	json_t *brokers;
+	topic_metadata_response_t *metadata_resp = NULL;
+	brokers = bootstrap_brokers(zh);
+	if (!brokers) {
+		return NULL;
+	}
+
+	/* query for metadata */
+	iter = json_object_iter(brokers);
+	for (; iter; iter = json_object_iter_next(brokers, iter)) {
+		json_t *obj = json_object_iter_value(iter);
+		broker_t broker;
+		memset(&broker, 0, sizeof broker);
+		broker.hostname = (char *)json_string_value(json_object_get(obj, "host"));
+		broker.port = json_integer_value(json_object_get(obj, "port"));
+		broker.id = json_integer_value(json_object_get(obj, "id"));
+		broker_connect(&broker);
+		metadata_resp = topic_metadata_request(&broker, NULL);
+		close(broker.fd);
+		if (metadata_resp)
+			break;
+	}
+	json_decref(brokers);
+	return metadata_resp;
 }
 
 static json_t *
