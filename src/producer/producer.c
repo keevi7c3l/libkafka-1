@@ -186,10 +186,8 @@ kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg,
 
 	vector_push_back(part->messages, msg);
 
-	char partStr[33];
-	memset(partStr, 0, sizeof partStr);
-	snprintf(partStr, sizeof partStr, "%d", partition->partition_id);
-	hashtable_set(topic->partitions, strdup(partStr), part);
+	char *partStr = string_builder("%d", partition->partition_id);
+	hashtable_set(topic->partitions, partStr, part);
 	hashtable_set(req->topics_partitions, strdup(msg->topic), topic);
 
 	send_request(p, broker, req);

@@ -60,12 +60,11 @@ topic_metadata_from_buffer(KafkaBuffer *buffer, hashtable_t *brokers)
 	buffer->cur += uint32_unpack(buffer->cur, &numPartitions);
 	partitions = hashtable_create(jenkins, keycmp, free, NULL);
 	for (i = 0; i < numPartitions; i++) {
+		char *id;
 		partition_metadata_t *part;
-		char id[33];
-		memset(id, 0, sizeof id);
 		part = partition_metadata_from_buffer(buffer, brokers);
-		snprintf(id, sizeof id, "%d", part->partition_id);
-		hashtable_set(partitions, strdup(id), part);
+		id = string_builder("%d", part->partition_id);
+		hashtable_set(partitions, id, part);
 	}
 	return topic_metadata_new(topic, numPartitions, partitions, errCode);
 }
@@ -87,16 +86,15 @@ parse_topic_metadata_response(KafkaBuffer *buffer)
 
 	/* load brokers */
 	for (i = 0; i < numBrokers; i++) {
-		char bstr[33];
+		char *bstr;
 		broker_t *b;
 		b = calloc(1, sizeof *b);
 		buffer->cur += uint32_unpack(buffer->cur, &b->id);
 		buffer->cur += string_unpack(buffer->cur, &b->hostname);
 		buffer->cur += uint32_unpack(buffer->cur, &b->port);
 		broker_connect(b);
-		memset(bstr, 0, sizeof bstr);
-		snprintf(bstr, sizeof bstr, "%d", b->id);
-		hashtable_set(resp->brokers, strdup(bstr), b);
+		bstr = string_builder("%d", b->id);
+		hashtable_set(resp->brokers, bstr, b);
 	}
 
 	/* Read Topic Metadata */
