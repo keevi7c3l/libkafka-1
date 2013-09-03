@@ -1,0 +1,2 @@
+Finish metadata support so I can get rid of zookeeper metadata support.
+    - Don't setup internal data structures from zookeeper JSON
