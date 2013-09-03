@@ -97,9 +97,6 @@ struct kafka_producer {
 #define KAFKA_PRODUCER_MAGIC 0xb5be14d0
 	zhandle_t *zh;
 	clientid_t cid;
-/*	json_t *topics;*/
-/*        json_t *brokers;*/
-/*	json_t *topicsPartitions;*/
 	hashtable_t *brokers;
 	hashtable_t *metadata;
 	pthread_mutex_t mtx;
@@ -162,8 +159,6 @@ int keycmp(const void *a, const void *b);
 void free_String_vector(struct String_vector *v);
 char *string_builder(const char *fmt, ...);
 void print_bytes(uint8_t *buf, size_t len);
-char *peel_topic(const char *path);
-char *peel_partition(const char *path);
 
 json_t *get_json_from_znode(zhandle_t *zh, const char *znode);
 json_t *wget_json_from_znode(zhandle_t *zh, const char *znode,

@@ -90,61 +90,6 @@ print_bytes(uint8_t *buf, size_t len)
 	printf("\n");
 }
 
-char *
-peel_topic(const char *path)
-{
-	/**
-	 * Given a /brokers/topics/<topic> znode prefix, return the topic.
-	 */
-	size_t len;
-	char *topic = NULL;
-	const char *ptr, *end;
-
-	if (!path || *path == '\0')
-		goto err;
-	len = strlen("/brokers/topics/");
-	if (strncmp(path, "/brokers/topics/", len) != 0)
-		goto err;
-
-	ptr = end = path+len;
-
-	while (*end && *end != '/')
-		end++;
-	if (end - ptr > 0) {
-		topic = calloc(end - ptr + 1, 1);
-		memcpy(topic, ptr, end - ptr);
-	}
-err:
-	return topic;
-}
-
-char *
-peel_partition(const char *path)
-{
-	/**
-	 * Given a /brokers/topics/<topic>/partitions/<partition>/state znode,
-	 * return the partition id.
-	 */
-	char *id = NULL;
-	const char *ptr, *end;
-
-	if (!path || *path == '\0')
-		goto err;
-	end = strrchr(path, '/');
-	if (strncmp(end, "/state", 6) != 0)
-		goto err;
-	ptr = end-1;
-	while (*ptr && *ptr != '/')
-		ptr--;
-	ptr++;
-	if (end - ptr > 0) {
-		id = calloc(end - ptr + 1, 1);
-		memcpy(id, ptr, end - ptr);
-	}
-err:
-	return id;
-}
-
 size_t
 jenkins(const void *key)
 {
