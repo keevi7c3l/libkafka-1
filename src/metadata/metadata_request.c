@@ -86,25 +86,38 @@ TopicMetadataRequest(broker_t *broker, const char **topics,
 	do {
 		rc = write(broker->fd, buffer->data, buffer->len);
 	} while (rc == -1 && errno == EINTR);
+
 	if (rc == -1)
 		return rc;
+
 	assert(rc == buffer->len);
 	KafkaBufferFree(buffer);
 
-	/* read metadata response */
+	/* read payload size from response */
 	int32_t size = 0;
 	do {
 		rc = read(broker->fd, &size, sizeof(int32_t));
 	} while (rc == -1 && errno == EINTR);
+
 	if (rc == -1)
 		return rc;
+
 	size = ntohl(size);
 
+	/* read rest of response */
 	topic_metadata_response_t *resp;
 	buffer = KafkaBufferNew(size);
-	assert(read(broker->fd, buffer->data, buffer->alloced) == size);
+	do {
+		rc = read(broker->fd, buffer->data, buffer->alloced);
+	} while (rc == -1 && errno == EINTR);
+
+	if (rc == -1)
+		return rc;
+
+	assert(rc == buffer->alloced);
 	buffer->len = buffer->alloced;
 	buffer->cur = buffer->data;
+
 	rc = parse_topic_metadata_response(buffer, brokers, metadata);
 	KafkaBufferFree(buffer);
 	return rc;
