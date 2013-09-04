@@ -56,8 +56,18 @@ kafka_producer_new(const char *zkServer)
 
 	p->res = KAFKA_OK;
 
+	/* TODO: make this configurable */
 	zoo_set_debug_level(ZOO_LOG_LEVEL_WARN);
-	p->zh = zookeeper_init(zkServer, producer_init_watcher, 10000, &p->cid, p, 0);
+
+	if (zkServer) {
+		p->zh = zookeeper_init(zkServer, producer_init_watcher, 10000,
+				&p->cid, p, 0);
+	} else {
+		/* default to localhost */
+		p->zh = zookeeper_init("localhost:2181", producer_init_watcher,
+				10000, &p->cid, p, 0);
+	}
+
 	if (!p->zh) {
 		p->res = KAFKA_ZOOKEEPER_INIT_ERROR;
 		goto finish;
