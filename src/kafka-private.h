@@ -36,6 +36,16 @@
 
 #define KAFKA_EXPORT __attribute__((visibility("default")))
 
+struct kafka_producer {
+	unsigned magic;
+#define KAFKA_PRODUCER_MAGIC 0xb5be14d0
+	zhandle_t *zh;
+	clientid_t cid;
+	hashtable_t *brokers;
+	hashtable_t *metadata;
+	int res;
+};
+
 typedef enum {
 	PRODUCE=0,
 	FETCH=1,
@@ -91,16 +101,6 @@ typedef struct {
 	hashtable_t *brokers;
 	hashtable_t *topicsMetadata;
 } topic_metadata_response_t;
-
-struct kafka_producer {
-	unsigned magic;
-#define KAFKA_PRODUCER_MAGIC 0xb5be14d0
-	zhandle_t *zh;
-	clientid_t cid;
-	hashtable_t *brokers;
-	hashtable_t *metadata;
-	int res;
-};
 
 typedef struct {
 	int64_t offset;
