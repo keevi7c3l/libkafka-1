@@ -81,7 +81,6 @@ partition_metadata_new(int32_t partition_id, broker_t *leader,
 partition_metadata_t *
 partition_metadata_from_buffer(KafkaBuffer *buffer, hashtable_t *brokers)
 {
-	partition_metadata_t *part;
 	int32_t i;
 	int16_t err_code;
 	int32_t partition_id;
@@ -89,8 +88,6 @@ partition_metadata_from_buffer(KafkaBuffer *buffer, hashtable_t *brokers)
 	broker_t *leader;
 	char str[33];
 	hashtable_t *replicas, *isr;
-	part = calloc(1, sizeof *part);
-	assert(part);
 
 	buffer->cur += uint16_unpack(buffer->cur, &err_code);
 	buffer->cur += uint32_unpack(buffer->cur, &partition_id);

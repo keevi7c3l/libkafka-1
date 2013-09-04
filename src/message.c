@@ -68,6 +68,7 @@ kafka_message_free(struct kafka_message *msg)
 		bytestring_free(msg->value);
 		if (msg->topic)
 			free(msg->topic);
+		free(msg);
 	}
 }
 

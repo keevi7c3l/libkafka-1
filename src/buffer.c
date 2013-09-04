@@ -48,6 +48,7 @@ KafkaBufferFree(KafkaBuffer *buffer)
 	if (buffer) {
 		if (buffer->data)
 			free(buffer->data);
+		free(buffer);
 	}
 }
 

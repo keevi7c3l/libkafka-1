@@ -188,6 +188,8 @@ kafka_producer_free(struct kafka_producer *p)
 		broker_t *broker = hashtable_iter_value(i);
 		if (broker) {
 			close(broker->fd);
+			free(broker->hostname);
+			free(broker);
 		}
 	}
 
@@ -200,8 +202,11 @@ kafka_producer_free(struct kafka_producer *p)
 			partition_metadata_t *part = hashtable_iter_value(j);
 			hashtable_destroy(part->replicas);
 			hashtable_destroy(part->isr);
+			free(part);
 		}
 		hashtable_destroy(topic->partitions);
+		free(topic->topic);
+		free(topic);
 	}
 	hashtable_destroy(p->brokers);
 	hashtable_destroy(p->metadata);
@@ -256,7 +261,8 @@ bootstrap_brokers(zhandle_t *zh)
 		broker = get_json_from_znode(zh, znode);
 		free(znode);
 		if (broker) {
-			json_object_set(js, ids.data[i], broker);
+			/* steal reference to broker */
+			json_object_set_new(js, ids.data[i], broker);
 		}
 	}
 	return js;

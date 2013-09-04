@@ -64,5 +64,6 @@ produce_request_free(produce_request_t *r)
 			free(topic);
 		}
 		hashtable_destroy(r->topics_partitions);
+		free(r);
 	}
 }
