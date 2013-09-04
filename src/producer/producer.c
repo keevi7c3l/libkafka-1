@@ -94,7 +94,7 @@ kafka_producer_status(struct kafka_producer *p)
 }
 
 static partition_metadata_t *
-pick_random_partition(struct kafka_producer *p, struct kafka_message *msg)
+pick_random_topic_partition(struct kafka_producer *p, struct kafka_message *msg)
 {
 	int32_t part;
 	topic_metadata_t *topic;
@@ -138,6 +138,7 @@ kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg,
 	produce_request_t *req;
 	topic_partitions_t *topic;
 	partition_messages_t *part;
+	partition_metadata_t *tp;
 	CHECK_OBJ_NOTNULL(p, KAFKA_PRODUCER_MAGIC);
 
 	/**
@@ -148,10 +149,8 @@ kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg,
 	 *   serialize message into that request object
 	 */
 
-	partition_metadata_t *partition = pick_random_partition(p, msg);
-	assert(partition);
-	broker_t *broker = partition->leader;
-	if (!broker)
+        tp = pick_random_topic_partition(p, msg);
+	if (!tp || !tp->leader)
 		return -1;
 
 	req = produce_request_new(sync);
@@ -162,15 +161,15 @@ kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg,
 
 	part = calloc(1, sizeof *part);
 	part->messages = vector_new(1, NULL);
-	part->partition = partition->partition_id;
+	part->partition = tp->partition_id;
 
 	vector_push_back(part->messages, msg);
 
-	char *partStr = string_builder("%d", partition->partition_id);
+	char *partStr = string_builder("%d", tp->partition_id);
 	hashtable_set(topic->partitions, partStr, part);
 	hashtable_set(req->topics_partitions, strdup(msg->topic), topic);
 
-	send_request(p, broker, req);
+	send_request(p, tp->leader, req);
 	produce_request_free(req);
 	return 0;
 }
@@ -230,7 +229,7 @@ bootstrap_metadata(zhandle_t *zh, hashtable_t **brokersOut, hashtable_t **metada
 		broker.port = json_integer_value(json_object_get(obj, "port"));
 		broker.id = json_integer_value(json_object_get(obj, "id"));
 		broker_connect(&broker);
-		rc = topic_metadata_request(&broker, NULL, brokersOut, metadataOut);
+		rc = TopicMetadataRequest(&broker, NULL, brokersOut, metadataOut);
 		close(broker.fd);
 		if (rc == 0)
 			break;

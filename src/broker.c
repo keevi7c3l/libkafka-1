@@ -71,25 +71,3 @@ broker_connect(broker_t *broker)
 	broker->fd = fd;
 	return fd;
 }
-
-json_t *
-topic_map_new(zhandle_t *zh, struct String_vector *v)
-{
-	int i, rc;
-	json_t *out = json_object();
-	for (i = 0; i < v->count; i++) {
-		char *znode;
-		json_t *topic;
-		json_error_t err;
-
-		znode = string_builder("/brokers/topics/%s", v->data[i]);
-		assert(znode);
-		topic = get_json_from_znode(zh, znode);
-		free(znode);
-
-		if (topic) {
-			json_object_set(out, v->data[i], topic);
-		}
-	}
-	return out;
-}

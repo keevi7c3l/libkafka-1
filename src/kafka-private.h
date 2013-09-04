@@ -147,9 +147,6 @@ partition_metadata_t *partition_metadata_from_buffer(KafkaBuffer *buffer,
 
 /* broker.c */
 int broker_connect(broker_t *broker);
-json_t *topic_map_new(zhandle_t *zh, struct String_vector *v);
-json_t *topic_partitions_map_new(struct kafka_producer *p, const char *topic,
-				struct String_vector *v);
 
 /* utils.c */
 size_t jenkins(const void *key);
@@ -201,7 +198,7 @@ int produce_request_append(struct kafka_producer *p, produce_request_t *req,
 
 /* metadata/metadata_request.c */
 
-int topic_metadata_request(broker_t *broker, const char **topics,
+int TopicMetadataRequest(broker_t *broker, const char **topics,
 			hashtable_t **brokers, hashtable_t **metadata);
 
 /**

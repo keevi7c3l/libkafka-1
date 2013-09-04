@@ -29,6 +29,87 @@
 #include <errno.h>
 #include "../kafka-private.h"
 
+static void print_broker(broker_t *broker);
+static topic_metadata_t *topic_metadata_new(char *topic, int32_t num_partitions,
+					hashtable_t *partitions, int16_t error);
+static topic_metadata_t *topic_metadata_from_buffer(KafkaBuffer *buffer,
+						hashtable_t *brokers);
+static int parse_topic_metadata_response(KafkaBuffer *buffer, hashtable_t **brokersOut,
+					hashtable_t **metadataOut);
+
+int
+TopicMetadataRequest(broker_t *broker, const char **topics,
+		hashtable_t **brokers, hashtable_t **metadata)
+{
+	/**
+	 * @param topics NULL-terminated list of strings
+	 *
+	 * Returns brokers and topic metadata
+	 */
+	int32_t i, numTopics = 0;
+	size_t len;
+	uint8_t *ptr;
+	KafkaBuffer *buffer;
+	request_header_t header;
+	const char *client = "libkafka";
+
+	memset(&header, 0, sizeof header);
+	header.apikey = METADATA;
+	header.correlation_id = 1;
+
+	len = sizeof header;
+	len += 2 + strlen(client);
+
+	len += 4; /* number of topics (size in bytes) */
+	if (topics) {
+		while (topics[numTopics]) {
+			len += 2 + strlen(topics[numTopics]);
+			numTopics++;
+		}
+	}
+
+	buffer = KafkaBufferNew(len);
+	ptr = buffer->data;
+	ptr += request_header_pack(&header, client, ptr);
+	ptr += uint32_pack(numTopics, ptr);
+
+	for (i = 0; i < numTopics; i++) {
+		ptr += string_pack(topics[i], ptr);
+	}
+
+	buffer->len = ptr - buffer->data;
+	/* write header size */
+	uint32_pack(buffer->len - 4, &buffer->data[0]);
+
+	/* send metadata request */
+	int rc;
+	do {
+		rc = write(broker->fd, buffer->data, buffer->len);
+	} while (rc == -1 && errno == EINTR);
+	if (rc == -1)
+		return rc;
+	assert(rc == buffer->len);
+	KafkaBufferFree(buffer);
+
+	/* read metadata response */
+	int32_t size = 0;
+	do {
+		rc = read(broker->fd, &size, sizeof(int32_t));
+	} while (rc == -1 && errno == EINTR);
+	if (rc == -1)
+		return rc;
+	size = ntohl(size);
+
+	topic_metadata_response_t *resp;
+	buffer = KafkaBufferNew(size);
+	assert(read(broker->fd, buffer->data, buffer->alloced) == size);
+	buffer->len = buffer->alloced;
+	buffer->cur = buffer->data;
+	rc = parse_topic_metadata_response(buffer, brokers, metadata);
+	KafkaBufferFree(buffer);
+	return rc;
+}
+
 static void
 print_broker(broker_t *broker)
 {
@@ -107,75 +188,4 @@ parse_topic_metadata_response(KafkaBuffer *buffer, hashtable_t **brokersOut, has
 	*brokersOut = brokers;
 	*metadataOut = metadata;
 	return 0;
-}
-
-int
-topic_metadata_request(broker_t *broker, const char **topics,
-		hashtable_t **brokers, hashtable_t **metadata)
-{
-	/**
-	 * @param topics NULL-terminated list of strings
-	 */
-	int32_t i, numTopics = 0;
-	size_t len;
-	uint8_t *ptr;
-	KafkaBuffer *buffer;
-	request_header_t header;
-	const char *client = "libkafka";
-
-	memset(&header, 0, sizeof header);
-	header.apikey = METADATA;
-	header.correlation_id = 1;
-
-	len = sizeof header;
-	len += 2 + strlen(client);
-
-	len += 4; /* number of topics (size in bytes) */
-	if (topics) {
-		while (topics[numTopics]) {
-			len += 2 + strlen(topics[numTopics]);
-			numTopics++;
-		}
-	}
-
-	buffer = KafkaBufferNew(len);
-	ptr = buffer->data;
-	ptr += request_header_pack(&header, client, ptr);
-	ptr += uint32_pack(numTopics, ptr);
-
-	for (i = 0; i < numTopics; i++) {
-		ptr += string_pack(topics[i], ptr);
-	}
-
-	buffer->len = ptr - buffer->data;
-	/* write header size */
-	uint32_pack(buffer->len - 4, &buffer->data[0]);
-
-	/* send metadata request */
-	int rc;
-	do {
-		rc = write(broker->fd, buffer->data, buffer->len);
-	} while (rc == -1 && errno == EINTR);
-	if (rc == -1)
-		return rc;
-	assert(rc == buffer->len);
-	KafkaBufferFree(buffer);
-
-	/* read metadata response */
-	int32_t size = 0;
-	do {
-		rc = read(broker->fd, &size, sizeof(int32_t));
-	} while (rc == -1 && errno == EINTR);
-	if (rc == -1)
-		return rc;
-	size = ntohl(size);
-
-	topic_metadata_response_t *resp;
-	buffer = KafkaBufferNew(size);
-	assert(read(broker->fd, buffer->data, buffer->alloced) == size);
-	buffer->len = buffer->alloced;
-	buffer->cur = buffer->data;
-	rc = parse_topic_metadata_response(buffer, brokers, metadata);
-	KafkaBufferFree(buffer);
-	return rc;
 }
