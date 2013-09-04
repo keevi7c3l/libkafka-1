@@ -69,17 +69,16 @@ topic_metadata_from_buffer(KafkaBuffer *buffer, hashtable_t *brokers)
 	return topic_metadata_new(topic, numPartitions, partitions, errCode);
 }
 
-static topic_metadata_response_t *
-parse_topic_metadata_response(KafkaBuffer *buffer)
+static int
+parse_topic_metadata_response(KafkaBuffer *buffer, hashtable_t **brokersOut, hashtable_t **metadataOut)
 {
 	uint8_t *ptr;
 	int32_t correlation_id;
 	int32_t i, j, numBrokers, numTopics;
-	topic_metadata_response_t *resp;
+	hashtable_t *brokers, *metadata;
 
-	resp = calloc(1, sizeof *resp);
-	resp->brokers = hashtable_create(jenkins, keycmp, free, NULL);
-	resp->topicsMetadata = hashtable_create(jenkins, keycmp, NULL, NULL);
+	brokers = hashtable_create(jenkins, keycmp, free, NULL);
+	metadata = hashtable_create(jenkins, keycmp, NULL, NULL);
 
 	buffer->cur += uint32_unpack(buffer->cur, &correlation_id);
 	buffer->cur += uint32_unpack(buffer->cur, &numBrokers);
@@ -94,22 +93,25 @@ parse_topic_metadata_response(KafkaBuffer *buffer)
 		buffer->cur += uint32_unpack(buffer->cur, &b->port);
 		broker_connect(b);
 		bstr = string_builder("%d", b->id);
-		hashtable_set(resp->brokers, bstr, b);
+		hashtable_set(brokers, bstr, b);
 	}
 
 	/* Read Topic Metadata */
 	buffer->cur += uint32_unpack(buffer->cur, &numTopics);
 	for (i = 0; i < numTopics; i++) {
 		topic_metadata_t *topic;
-		topic = topic_metadata_from_buffer(buffer, resp->brokers);
-		hashtable_set(resp->topicsMetadata, topic->topic, topic);
+		topic = topic_metadata_from_buffer(buffer, brokers);
+		hashtable_set(metadata, topic->topic, topic);
 	}
 	assert(buffer->cur - buffer->data == buffer->len);
-	return resp;
+	*brokersOut = brokers;
+	*metadataOut = metadata;
+	return 0;
 }
 
-topic_metadata_response_t *
-topic_metadata_request(broker_t *broker, const char **topics)
+int
+topic_metadata_request(broker_t *broker, const char **topics,
+		hashtable_t **brokers, hashtable_t **metadata)
 {
 	/**
 	 * @param topics NULL-terminated list of strings
@@ -155,7 +157,7 @@ topic_metadata_request(broker_t *broker, const char **topics)
 		rc = write(broker->fd, buffer->data, buffer->len);
 	} while (rc == -1 && errno == EINTR);
 	if (rc == -1)
-		return NULL;
+		return rc;
 	assert(rc == buffer->len);
 	KafkaBufferFree(buffer);
 
@@ -165,7 +167,7 @@ topic_metadata_request(broker_t *broker, const char **topics)
 		rc = read(broker->fd, &size, sizeof(int32_t));
 	} while (rc == -1 && errno == EINTR);
 	if (rc == -1)
-		return NULL;
+		return rc;
 	size = ntohl(size);
 
 	topic_metadata_response_t *resp;
@@ -173,7 +175,7 @@ topic_metadata_request(broker_t *broker, const char **topics)
 	assert(read(broker->fd, buffer->data, buffer->alloced) == size);
 	buffer->len = buffer->alloced;
 	buffer->cur = buffer->data;
-	resp = parse_topic_metadata_response(buffer);
+	rc = parse_topic_metadata_response(buffer, brokers, metadata);
 	KafkaBufferFree(buffer);
-	return resp;
+	return rc;
 }

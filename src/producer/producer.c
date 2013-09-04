@@ -37,7 +37,8 @@
 
 #include "../jansson/jansson.h"
 
-static topic_metadata_response_t *bootstrap_metadata(zhandle_t *zh);
+static int bootstrap_metadata(zhandle_t *zh, hashtable_t **brokers,
+			hashtable_t **metadata);
 static json_t *bootstrap_brokers(zhandle_t *zh);
 static broker_t *kp_broker_by_id(struct kafka_producer *p, int id);
 
@@ -75,14 +76,10 @@ kafka_producer_new(const char *zkServer)
 
 	p->magic = KAFKA_PRODUCER_MAGIC;
 
-	metadata_resp = bootstrap_metadata(p->zh);
-	if (!metadata_resp) {
+	if (bootstrap_metadata(p->zh, &p->brokers, &p->metadata) == -1) {
 		p->res = KAFKA_METADATA_ERROR;
 		goto finish;
 	}
-
-	p->brokers = metadata_resp->brokers;
-	p->metadata = metadata_resp->topicsMetadata;
 finish:
 	return p;
 }
@@ -212,15 +209,15 @@ kafka_producer_free(struct kafka_producer *p)
 	free(p);
 }
 
-static topic_metadata_response_t *
-bootstrap_metadata(zhandle_t *zh)
+static int
+bootstrap_metadata(zhandle_t *zh, hashtable_t **brokersOut, hashtable_t **metadataOut)
 {
+	int rc = 0;
 	void *iter;
 	json_t *brokers;
-	topic_metadata_response_t *metadata_resp = NULL;
 	brokers = bootstrap_brokers(zh);
 	if (!brokers) {
-		return NULL;
+		return -1;
 	}
 
 	/* query for metadata */
@@ -233,13 +230,13 @@ bootstrap_metadata(zhandle_t *zh)
 		broker.port = json_integer_value(json_object_get(obj, "port"));
 		broker.id = json_integer_value(json_object_get(obj, "id"));
 		broker_connect(&broker);
-		metadata_resp = topic_metadata_request(&broker, NULL);
+		rc = topic_metadata_request(&broker, NULL, brokersOut, metadataOut);
 		close(broker.fd);
-		if (metadata_resp)
+		if (rc == 0)
 			break;
 	}
 	json_decref(brokers);
-	return metadata_resp;
+	return rc;
 }
 
 static json_t *

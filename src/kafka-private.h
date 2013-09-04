@@ -201,7 +201,8 @@ int produce_request_append(struct kafka_producer *p, produce_request_t *req,
 
 /* metadata/metadata_request.c */
 
-topic_metadata_response_t *topic_metadata_request(broker_t *broker, const char **topics);
+int topic_metadata_request(broker_t *broker, const char **topics,
+			hashtable_t **brokers, hashtable_t **metadata);
 
 /**
  * OBJ stuff taken from miniobj.h in Varnish. Written by PHK.
