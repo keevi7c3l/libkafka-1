@@ -38,8 +38,8 @@ static void bytestring_free(bytestring_t *s)
 	}
 }
 
-KAFKA_EXPORT struct kafka_message *
-kafka_message_new(const char *topic, const char *key, const char *value)
+static struct kafka_message *
+create_message(const char *topic, const char *key, const char *value)
 {
 	struct kafka_message *msg;
 	if (!topic)
@@ -58,6 +58,18 @@ kafka_message_new(const char *topic, const char *key, const char *value)
 	msg->value->data = strdup(value);
 	msg->topic = strdup(topic);
 	return msg;
+}
+
+KAFKA_EXPORT struct kafka_message *
+kafka_message_new(const char *topic, const char *value)
+{
+	return create_message(topic, NULL, value);
+}
+
+KAFKA_EXPORT struct kafka_message *
+kafka_keyed_message_new(const char *topic, const char *key, const char *value)
+{
+	return create_message(topic, key, value);
 }
 
 KAFKA_EXPORT void

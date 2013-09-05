@@ -54,6 +54,17 @@ uint32_unpack(uint8_t *ptr, uint32_t *value)
 }
 
 inline size_t
+uint64_unpack(uint8_t *ptr, uint64_t *value)
+{
+	uint32_t v;
+	uint32_unpack(ptr, &v);
+	*value = (uint64_t)v << 32;
+	uint32_unpack(ptr+4, &v);
+	*value |= v;
+	return 8;
+}
+
+inline size_t
 string_unpack(uint8_t *ptr, char **value)
 {
 	/**

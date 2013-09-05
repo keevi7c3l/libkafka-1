@@ -36,6 +36,14 @@
 
 #define KAFKA_EXPORT __attribute__((visibility("default")))
 
+/**
+ * TODO: should I add a broker_requests hashtable to producer?
+ * broker_requests: {
+ *   'broker0': request,
+ *   'broker1': request
+ * }
+ */
+
 struct kafka_producer {
 	unsigned magic;
 #define KAFKA_PRODUCER_MAGIC 0xb5be14d0
@@ -146,6 +154,8 @@ partition_metadata_t *partition_metadata_from_buffer(KafkaBuffer *buffer,
 						hashtable_t *brokers);
 
 /* broker.c */
+int nonblocking(int fd);
+int blocking(int fd);
 int broker_connect(broker_t *broker);
 
 /* utils.c */

@@ -25,10 +25,12 @@
  */
 
 #include <stdlib.h>
+#include <errno.h>
 #include <time.h>
 #include <assert.h>
 #include <string.h>
 #include <pthread.h>
+#include <poll.h>
 
 #include <zookeeper/zookeeper.h>
 
@@ -37,6 +39,7 @@
 
 #include "../jansson/jansson.h"
 
+static void producer_metadata_free(struct kafka_producer *p);
 static int bootstrap_metadata(zhandle_t *zh, hashtable_t **brokers,
 			hashtable_t **metadata);
 static json_t *bootstrap_brokers(zhandle_t *zh);
@@ -94,35 +97,114 @@ kafka_producer_status(struct kafka_producer *p)
 }
 
 static partition_metadata_t *
+partition_leader(hashtable_t *partitions, int32_t partition_id)
+{
+	char partStr[33];
+	memset(partStr, 0, sizeof partStr);
+	snprintf(partStr, sizeof partStr, "%d", partition_id);
+	return hashtable_get(partitions, partStr);
+}
+
+static partition_metadata_t *
+topic_partition_leader(struct kafka_producer *p, const char *topic, int32_t partition_id)
+{
+	topic_metadata_t *topicMetadata;
+	topicMetadata = hashtable_get(p->metadata, topic);
+	if (topicMetadata) {
+		return partition_leader(topicMetadata->partitions, partition_id);
+	}
+	return NULL;
+}
+
+static partition_metadata_t *
 pick_random_topic_partition(struct kafka_producer *p, struct kafka_message *msg)
 {
 	int32_t part;
 	topic_metadata_t *topic;
-	char partStr[33];
-	memset(partStr, 0, sizeof partStr);
 	topic = hashtable_get(p->metadata, msg->topic);
 	if (!topic)
 		return NULL;
 	part = rand() % topic->num_partitions;
-	snprintf(partStr, sizeof partStr, "%d", part);
-	return hashtable_get(topic->partitions, partStr);
+	return partition_leader(topic->partitions, part);
+}
+
+static int
+parse_produce_response(KafkaBuffer *buffer)
+{
+	int32_t correlation_id, num_topics, i, j;
+	buffer->cur += uint32_unpack(buffer->cur, &correlation_id);
+	buffer->cur += uint32_unpack(buffer->cur, &num_topics);
+	for (i = 0; i < num_topics; i++) {
+		int32_t num_partitions;
+		char *topic;
+		buffer->cur += string_unpack(buffer->cur, &topic);
+		buffer->cur += uint32_unpack(buffer->cur, &num_partitions);
+		for (j = 0; j < num_partitions; j++) {
+			int32_t partition;
+			int16_t error;
+			int64_t offset;
+			buffer->cur += uint32_unpack(buffer->cur, &partition);
+			buffer->cur += uint16_unpack(buffer->cur, &error);
+			buffer->cur += uint64_unpack(buffer->cur, &offset);
+			if (error)
+				return error;
+		}
+	}
 }
 
 static int
 send_request(struct kafka_producer *p, broker_t *broker, produce_request_t *req)
 {
+	int rc;
+	int res = 0;
 	KafkaBuffer *buffer = KafkaBufferNew(0);
 	produce_request_serialize(req, buffer);
 
 	/* TODO: do actual sending in kafka_producer_send() */
-	assert(write(broker->fd, buffer->data, buffer->len) == buffer->len);
-	KafkaBufferFree(buffer);
+	do {
+		rc = write(broker->fd, buffer->data, buffer->len);
+	} while (rc == -1 && errno == EINTR);
+
+	if (rc == -1) {
+		res = -1;
+		goto finish;
+	}
 
 	if (req->acks != KAFKA_REQUEST_ASYNC) {
-		char rbuf[1024];
-		size_t bufsize;
-		bufsize = read(broker->fd, rbuf, sizeof rbuf);
+		int32_t rlen = 0;
+
+		rc = read(broker->fd, &rlen, 4);
+		if (rc == -1) {
+			res = -1;
+			goto finish;
+		}
+
+		rlen = ntohl(rlen);
+
+		if (rlen > 0) {
+			KafkaBuffer *rbuf = KafkaBufferNew(rlen);
+			rc = read(broker->fd, rbuf->data, rbuf->alloced);
+			if (rc != rlen) {
+				res = -1;
+				KafkaBufferFree(rbuf);
+				goto finish;
+			}
+			rbuf->len = rbuf->alloced;
+			rbuf->cur = rbuf->data;
+			/**
+			 * TODO: need to return errors for each topic-partition
+			 * error.
+			 */
+			rc = parse_produce_response(rbuf);
+			if (rc != KAFKA_OK) {
+				res = -1;
+			}
+			KafkaBufferFree(rbuf);
+		}
 	}
+finish:
+	KafkaBufferFree(buffer);
+	return res;
 }
 
 KAFKA_EXPORT int
@@ -134,27 +216,38 @@ kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg,
 	 * - KAFKA_REQUEST_ASYNC: no ack response
 	 * - KAFKA_REQUEST_SYNC: ack response after message is written to log
 	 * - KAFKA_REQUEST_FULL_SYNC: ack response after full replication
+	 *
+	 * Async should be handled a bit differently. You need to build up a
+	 * data structure of N messages and batch them all at once at a later
+	 * time. Probably using a separate thread.
 	 */
+	int res;
 	produce_request_t *req;
 	topic_partitions_t *topic;
 	partition_messages_t *part;
 	partition_metadata_t *tp;
+
 	CHECK_OBJ_NOTNULL(p, KAFKA_PRODUCER_MAGIC);
 
 	/**
-	 * (for many messages)
-	 * for each message:
-	 *   pick broker(msg) // need to know topic-partition
-	 *   get request object for broker
-	 *   serialize message into that request object
+	 * This works for sending a single message but not when you're batching
+	 * many messages to different topics partitions and brokers.
+	 *
+	 * You would have to rebuild every request object and reassign messages
+	 * depending on which broker now controls which topic-partition (right?)
+	 *
+	 * Apache Kafka's (v0.8) producer library loops over each message and
+	 * groups them into the appropriate buckets on send.
+	 *
+	 * See partitionAndCollate() in producer/async/DefaultEventHandler.scala
 	 */
 
-        tp = pick_random_topic_partition(p, msg);
-	if (!tp || !tp->leader)
+	tp = pick_random_topic_partition(p, msg);
+	if (!tp || !tp->leader) {
 		return -1;
+	}
 
 	req = produce_request_new(sync);
-
 	topic = calloc(1, sizeof *topic);
 	topic->topic = msg->topic;
 	topic->partitions = hashtable_create(jenkins, keycmp, free, NULL);
@@ -169,18 +262,48 @@ kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg,
 	hashtable_set(topic->partitions, partStr, part);
 	hashtable_set(req->topics_partitions, strdup(msg->topic), topic);
 
-	send_request(p, tp->leader, req);
+	int retries = 4;
+
+	while (retries > 0) {
+		res = 0;
+		int rc = send_request(p, tp->leader, req);
+		if (rc == 0) {
+			break;
+		}
+
+		fprintf(stderr, "%s\n", kafka_status_string(rc));
+
+		if (rc == KAFKA_MESSAGE_SIZE_TOO_LARGE) {
+			res = -1;
+			break;
+		}
+
+		/* request failed, update metadata and try again */
+		producer_metadata_free(p);
+		if (bootstrap_metadata(p->zh, &p->brokers, &p->metadata) == -1) {
+			res = -KAFKA_METADATA_ERROR;
+			break;
+		}
+
+		/* pick new leader for partition */
+		tp = topic_partition_leader(p, msg->topic, part->partition);
+		if (!tp || !tp->leader) {
+			res = -1;
+			break;
+		}
+		retries--;
+	}
+
 	produce_request_free(req);
-	return 0;
+	if (retries == 0)
+		res = -1;
+	return res;
 }
 
-KAFKA_EXPORT void
-kafka_producer_free(struct kafka_producer *p)
+static void
+producer_metadata_free(struct kafka_producer *p)
 {
 	void *i, *j;
-	CHECK_OBJ_NOTNULL(p, KAFKA_PRODUCER_MAGIC);
-	if (p->zh)
-		zookeeper_close(p->zh);
 
 	i = hashtable_iter(p->brokers);
 	for (; i; i = hashtable_iter_next(p->brokers, i)) {
@@ -210,6 +333,15 @@ kafka_producer_free(struct kafka_producer *p)
 	}
 	hashtable_destroy(p->brokers);
 	hashtable_destroy(p->metadata);
+}
+
+KAFKA_EXPORT void
+kafka_producer_free(struct kafka_producer *p)
+{
+	CHECK_OBJ_NOTNULL(p, KAFKA_PRODUCER_MAGIC);
+	if (p->zh)
+		zookeeper_close(p->zh);
+	producer_metadata_free(p);
 	free(p);
 }
 
@@ -234,6 +366,7 @@ bootstrap_metadata(zhandle_t *zh, hashtable_t **brokersOut, hashtable_t **metada
 		broker.port = json_integer_value(json_object_get(obj, "port"));
 		broker.id = json_integer_value(json_object_get(obj, "id"));
 		broker_connect(&broker);
+		/* TODO: check for "Leader Not Available" responses and wait/retry */
 		rc = TopicMetadataRequest(&broker, NULL, brokersOut, metadataOut);
 		close(broker.fd);
 		if (rc == 0)

@@ -7,6 +7,7 @@ global:
         kafka_producer_status;
 
         kafka_message_new;
+        kafka_keyed_message_new;
         kafka_message_free;
 
 local:

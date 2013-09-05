@@ -24,6 +24,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <fcntl.h>
 #include <assert.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -34,6 +35,26 @@
 
 #include "kafka-private.h"
 #include "jansson/jansson.h"
+
+int
+nonblocking(int fd)
+{
+	int flags;
+	flags = fcntl(fd, F_GETFL);
+	if (flags < 0 || fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0)
+		return -1;
+	return 0;
+}
+
+int
+blocking(fd)
+{
+	int flags;
+	flags = fcntl(fd, F_GETFL);
+	if (flags < 0 || fcntl(fd, F_SETFL, flags | ~O_NONBLOCK) < 0)
+		return -1;
+	return 0;
+}
 
 static unsigned long
 gethostaddress(const struct hostent *h)

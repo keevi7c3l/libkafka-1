@@ -34,8 +34,10 @@ int main(int argc, char **argv)
 	p = kafka_producer_new("ubuntu:2181");
 	if (kafka_producer_status(p) == KAFKA_OK) {
 		struct kafka_message *msg;
-		msg = kafka_message_new("test", NULL, "hello world");
-		kafka_producer_send(p, msg, KAFKA_REQUEST_FULL_SYNC);
+		msg = kafka_message_new("test", "hello world");
+		if (kafka_producer_send(p, msg, KAFKA_REQUEST_FULL_SYNC) < 0) {
+			fprintf(stderr, "request failed\n");
+		}
 		kafka_message_free(msg);
 		kafka_producer_free(p);
 	}

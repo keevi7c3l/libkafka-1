@@ -36,6 +36,18 @@ kafka_status_string(int status)
 {
 	static kafka_status_t statuses[] = {
 		{"Ok"},
+		{"Offset out of range"},
+		{"Invalid message"},
+		{"Unknown topic or partition"},
+		{"Invalid message size"},
+		{"Leader not available"},
+		{"Not leader for partition"},
+		{"Request timed out"},
+		{"Broker not available"},
+		{"Replica not available"},
+		{"Message size too large"},
+		{"Stale controller epoch code"},
+		{"Offset metadata too large code"},
 		{"Producer Error"},
 		{"Zookeeper Init Error"},
 		{"Broker Init Error"},
@@ -43,7 +55,8 @@ kafka_status_string(int status)
 		{"Topics Partitions Init Error"}
 	};
 
-	if (status >= sizeof(statuses) / sizeof(kafka_status_t)) {
+	if (status >= sizeof(statuses) / sizeof(kafka_status_t) ||
+		status == KAFKA_UNKNOWN) {
 		return "Kafka Unknown";
 	}
 	return statuses[status].status;

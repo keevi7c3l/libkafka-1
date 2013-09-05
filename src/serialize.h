@@ -33,6 +33,7 @@
 inline size_t uint8_unpack(uint8_t *ptr, uint8_t *value);
 inline size_t uint16_unpack(uint8_t *ptr, uint16_t *value);
 inline size_t uint32_unpack(uint8_t *ptr, uint32_t *value);
+inline size_t uint64_unpack(uint8_t *ptr, uint64_t *value);
 inline size_t string_unpack(uint8_t *ptr, char **value);
 
 inline size_t uint8_pack(uint8_t value, uint8_t *ptr);
