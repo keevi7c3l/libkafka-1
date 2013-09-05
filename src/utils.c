@@ -115,6 +115,20 @@ keycmp(const void *a, const void *b)
 	return strcmp(aa, bb) == 0;
 }
 
+size_t
+int32_hash(const void *key)
+{
+	return *(int32_t *)key;
+}
+
+int
+int32_cmp(const void *a, const void *b)
+{
+	int32_t aa = *(int32_t *)a;
+	int32_t bb = *(int32_t *)b;
+	return aa == bb;
+}
+
 json_t *
 get_json_from_znode(zhandle_t *zh, const char *znode)
 {

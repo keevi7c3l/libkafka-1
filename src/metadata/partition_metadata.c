@@ -33,16 +33,14 @@ static hashtable_t *
 map_partition_replicas(KafkaBuffer *buffer, hashtable_t *brokers)
 {
 	int32_t i, num_replicas;
-	hashtable_t *r = hashtable_create(jenkins, keycmp, free, NULL);
+	hashtable_t *r = hashtable_create(int32_hash, int32_cmp, free, NULL);
 	buffer->cur += uint32_unpack(buffer->cur, &num_replicas);
 	assert(buffer->cur < &buffer->data[buffer->len]);
 	for (i = 0; i < num_replicas; i++) {
-		char *str;
-		int32_t replica_id;
-		buffer->cur += uint32_unpack(buffer->cur, &replica_id);
+		int32_t *replica_id = calloc(1, sizeof(int32_t));
+		buffer->cur += uint32_unpack(buffer->cur, replica_id);
 		assert(buffer->cur < &buffer->data[buffer->len]);
-		str = string_builder("%d", replica_id);
-		hashtable_set(r, str, hashtable_get(brokers, str));
+		hashtable_set(r, replica_id, hashtable_get(brokers, replica_id));
 	}
 	return r;
 }
@@ -51,15 +49,13 @@ static hashtable_t *
 map_partition_isr(KafkaBuffer *buffer, hashtable_t *brokers)
 {
 	int32_t i, num_isr;
-	hashtable_t *isr = hashtable_create(jenkins, keycmp, free, NULL);
+	hashtable_t *isr = hashtable_create(int32_hash, int32_cmp, free, NULL);
 	buffer->cur += uint32_unpack(buffer->cur, &num_isr);
 	assert(buffer->cur < &buffer->data[buffer->len]);
 	for (i = 0; i < num_isr; i++) {
-		char *str;
-		int32_t isr_id;
-		buffer->cur += uint32_unpack(buffer->cur, &isr_id);
-		str = string_builder("%d", isr_id);
-		hashtable_set(isr, str, hashtable_get(brokers, str));
+		int32_t *isr_id = calloc(1, sizeof(int32_t));
+		buffer->cur += uint32_unpack(buffer->cur, isr_id);
+		hashtable_set(isr, isr_id, hashtable_get(brokers, isr_id));
 	}
 	return isr;
 }
@@ -86,17 +82,13 @@ partition_metadata_from_buffer(KafkaBuffer *buffer, hashtable_t *brokers)
 	int32_t partition_id;
 	int32_t leader_id;
 	broker_t *leader;
-	char str[33];
 	hashtable_t *replicas, *isr;
 
 	buffer->cur += uint16_unpack(buffer->cur, &err_code);
 	buffer->cur += uint32_unpack(buffer->cur, &partition_id);
 	buffer->cur += uint32_unpack(buffer->cur, &leader_id);
 
-	memset(str, 0, sizeof str);
-	snprintf(str, sizeof str, "%d", leader_id);
-	leader = hashtable_get(brokers, str);
-
+	leader = hashtable_get(brokers, &leader_id);
 	replicas = map_partition_replicas(buffer, brokers);
 	isr = map_partition_isr(buffer, brokers);
 

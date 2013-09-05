@@ -97,21 +97,12 @@ kafka_producer_status(struct kafka_producer *p)
 }
 
 static partition_metadata_t *
-partition_leader(hashtable_t *partitions, int32_t partition_id)
-{
-	char partStr[33];
-	memset(partStr, 0, sizeof partStr);
-	snprintf(partStr, sizeof partStr, "%d", partition_id);
-	return hashtable_get(partitions, partStr);
-}
-
-static partition_metadata_t *
 topic_partition_leader(struct kafka_producer *p, const char *topic, int32_t partition_id)
 {
 	topic_metadata_t *topicMetadata;
 	topicMetadata = hashtable_get(p->metadata, topic);
 	if (topicMetadata) {
-		return partition_leader(topicMetadata->partitions, partition_id);
+		return hashtable_get(topicMetadata->partitions, &partition_id);
 	}
 	return NULL;
 }
@@ -125,7 +116,7 @@ pick_random_topic_partition(struct kafka_producer *p, struct kafka_message *msg)
 	if (!topic)
 		return NULL;
 	part = rand() % topic->num_partitions;
-	return partition_leader(topic->partitions, part);
+	return hashtable_get(topic->partitions, &part);
 }
 
 static int
@@ -250,7 +241,7 @@ kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg,
 	req = produce_request_new(sync);
 	topic = calloc(1, sizeof *topic);
 	topic->topic = msg->topic;
-	topic->partitions = hashtable_create(jenkins, keycmp, free, NULL);
+	topic->partitions = hashtable_create(int32_hash, int32_cmp, NULL, NULL);
 
 	part = calloc(1, sizeof *part);
 	part->messages = vector_new(1, NULL);
@@ -258,8 +249,7 @@ kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg,
 
 	vector_push_back(part->messages, msg);
 
-	char *partStr = string_builder("%d", tp->partition_id);
-	hashtable_set(topic->partitions, partStr, part);
+	hashtable_set(topic->partitions, &tp->partition_id, part);
 	hashtable_set(req->topics_partitions, strdup(msg->topic), topic);
 
 	int retries = 4;
@@ -399,13 +389,4 @@ bootstrap_brokers(zhandle_t *zh)
 		}
 	}
 	return js;
-}
-
-static broker_t *
-kp_broker_by_id(struct kafka_producer *p, int id)
-{
-	char buf[33];
-	memset(buf, 0, sizeof buf);
-	snprintf(buf, sizeof buf, "%d", id);
-	return hashtable_get(p->brokers, buf);
 }

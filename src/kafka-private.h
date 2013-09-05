@@ -162,6 +162,9 @@ int broker_connect(broker_t *broker);
 size_t jenkins(const void *key);
 int keycmp(const void *a, const void *b);
 
+size_t int32_hash(const void *key);
+int int32_cmp(const void *a, const void *b);
+
 void free_String_vector(struct String_vector *v);
 char *string_builder(const char *fmt, ...);
 void print_bytes(uint8_t *buf, size_t len);
