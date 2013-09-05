@@ -30,8 +30,12 @@
 
 int main(int argc, char **argv)
 {
+	char *zkServer = "localhost:2181";
 	struct kafka_producer *p;
-	p = kafka_producer_new("ubuntu:2181");
+	if (argc == 2) {
+		zkServer = argv[1];
+	}
+	p = kafka_producer_new(zkServer);
 	if (kafka_producer_status(p) == KAFKA_OK) {
 		struct kafka_message *msg;
 		msg = kafka_message_new("test", "hello world");

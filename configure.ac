@@ -7,7 +7,7 @@ AC_CONFIG_SRCDIR([src/kafka.c])
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_MACRO_DIR([m4])
 
-AM_INIT_AUTOMAKE([foreign 1.11 -Wall -Wno-portability silent-rules])
+AM_INIT_AUTOMAKE([foreign 1.11 -Wall -Wno-portability silent-rules subdir-objects])
 AC_PROG_CC_STDC
 AC_USE_SYSTEM_EXTENSIONS
 AM_SILENT_RULES([yes])
