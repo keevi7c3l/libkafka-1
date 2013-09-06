@@ -407,21 +407,6 @@ kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg,
 			break;
 		}
 		retries--;
-
-		/**
-		 * TODO: retry individual failures with new metadata.
-		 */
-
-		/* request failed, update metadata and try again */
-/*
-		producer_metadata_free(p);
-		if (bootstrap_metadata(p->zh, &p->brokers, &p->metadata) == -1) {
-			res = -KAFKA_METADATA_ERROR;
-			break;
-		}
-
-		retries--;
-*/
 	}
 
 	if (retries == 0)

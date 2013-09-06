@@ -185,7 +185,8 @@ serialize_topic_partitions(hashtable_t *partitions, KafkaBuffer *buffer)
 		KafkaBufferReserve(buffer, sizeof(int32_t) * 2);
 		buffer->cur += uint32_pack(partId, buffer->cur);
 		msgSetSizeOffset = buffer->cur - buffer->data;
-		buffer->cur += sizeof(int32_t); /* msgSetSize is written later */
+		/* msgSetSize is written later, skip it for now */
+		buffer->cur += sizeof(int32_t);
 
 		for (u = 0; u < vector_size(messages); u++) {
 			struct kafka_message *msg = vector_at(messages, u);
