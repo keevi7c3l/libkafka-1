@@ -43,7 +43,26 @@ static void producer_metadata_free(struct kafka_producer *p);
 static int bootstrap_metadata(zhandle_t *zh, hashtable_t **brokers,
 			hashtable_t **metadata);
 static json_t *bootstrap_brokers(zhandle_t *zh);
-static broker_t *kp_broker_by_id(struct kafka_producer *p, int id);
+
+
+static partition_metadata_t *pick_random_topic_partition(struct kafka_producer *p,
+							struct kafka_message *msg);
+
+static hashtable_t *parse_produce_response(KafkaBuffer *buffer);
+static int send_produce_request(struct kafka_producer *p, int32_t brokerId,
+				hashtable_t *topics_partitions, int16_t sync,
+				hashtable_t **failuresOut);
+
+static hashtable_t *broker_message_map(struct kafka_producer *p,
+				struct vector *messages);
+static void broker_message_map_free(hashtable_t *map);
+
+static int handle_topics_partitions_failures(hashtable_t *topicsPartitions,
+					hashtable_t *failedRequest,
+					struct vector *failedMessages);
+
+static int dispatch(struct kafka_producer *p, struct vector *messages,
+		int16_t sync, struct vector **out);
 
 KAFKA_EXPORT struct kafka_producer *
 kafka_producer_new(const char *zkServer)
@@ -94,6 +113,172 @@ kafka_producer_status(struct kafka_producer *p)
 		return KAFKA_PRODUCER_ERROR;
 	CHECK_OBJ(p, KAFKA_PRODUCER_MAGIC);
 	return p->res;
+}
+
+KAFKA_EXPORT int
+kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg,
+		int16_t sync)
+{
+	/**
+	 * Kafka provides a few different synchronization levels.
+	 * - KAFKA_REQUEST_ASYNC: no ack response
+	 * - KAFKA_REQUEST_SYNC: ack response after message is written to log
+	 * - KAFKA_REQUEST_FULL_SYNC: ack response after full replication
+	 *
+	 * Async should be handled a bit differently. You need to build up a
+	 * data structure of N messages and batch them all at once at a later
+	 * time. Probably using a separate thread.
+	 */
+	int res;
+
+	CHECK_OBJ_NOTNULL(p, KAFKA_PRODUCER_MAGIC);
+
+	/**
+	 * This works for sending a single message but not when you're batching
+	 * many messages to different topics partitions and brokers.
+	 *
+	 * You would have to rebuild every request object and reassign messages
+	 * depending on which broker now controls which topic-partition (right?)
+	 *
+	 * Apache Kafka's (v0.8) producer library loops over each message and
+	 * groups them into the appropriate buckets on send.
+	 *
+	 * See partitionAndCollate() in producer/async/DefaultEventHandler.scala
+	 */
+
+	struct vector *vec = vector_new(1, NULL);
+	vector_push_back(vec, msg);
+	int retries = 4;
+
+	while (retries > 0) {
+		struct vector *failures;
+		res = dispatch(p, vec, sync, &failures);
+		if (res == KAFKA_OK)
+			break;
+
+		/**
+		 * Sometimes a failure happens because a broker just dies.
+		 * In this case there will be no response, but res != KAFKA_OK.
+		 * Just update metadata and retry the request.
+		 */
+
+		if (failures) {
+			/* vector of messages that failed. simple enough to retry */
+			vec = failures;
+		}
+
+		producer_metadata_free(p);
+		if (bootstrap_metadata(p->zh, &p->brokers, &p->metadata) == -1) {
+			res = KAFKA_METADATA_ERROR;
+			break;
+		}
+		retries--;
+	}
+
+	if (retries == 0)
+		res = -1;
+	return res;
+}
+
+KAFKA_EXPORT void
+kafka_producer_free(struct kafka_producer *p)
+{
+	CHECK_OBJ_NOTNULL(p, KAFKA_PRODUCER_MAGIC);
+	if (p->zh)
+		zookeeper_close(p->zh);
+	producer_metadata_free(p);
+	free(p);
+}
+
+static void
+producer_metadata_free(struct kafka_producer *p)
+{
+	void *i, *j;
+
+	i = hashtable_iter(p->brokers);
+	for (; i; i = hashtable_iter_next(p->brokers, i)) {
+		int fd;
+		broker_t *broker = hashtable_iter_value(i);
+		if (broker) {
+			close(broker->fd);
+			free(broker->hostname);
+			free(broker);
+		}
+	}
+
+	/* TODO: setup value free in hashtable_create so this can go away */
+	i = hashtable_iter(p->metadata);
+	for (; i; i = hashtable_iter_next(p->metadata, i)) {
+		topic_metadata_t *topic = hashtable_iter_value(i);
+		j = hashtable_iter(topic->partitions);
+		for (; j; j = hashtable_iter_next(topic->partitions, j)) {
+			partition_metadata_t *part = hashtable_iter_value(j);
+			hashtable_destroy(part->replicas);
+			hashtable_destroy(part->isr);
+			free(part);
+		}
+		hashtable_destroy(topic->partitions);
+		free(topic->topic);
+		free(topic);
+	}
+	hashtable_destroy(p->brokers);
+	hashtable_destroy(p->metadata);
+}
+
+static int
+bootstrap_metadata(zhandle_t *zh, hashtable_t **brokersOut, hashtable_t **metadataOut)
+{
+	int rc = 0;
+	void *iter;
+	json_t *brokers;
+	brokers = bootstrap_brokers(zh);
+	if (!brokers) {
+		return -1;
+	}
+
+	/* query for metadata */
+	iter = json_object_iter(brokers);
+	for (; iter; iter = json_object_iter_next(brokers, iter)) {
+		json_t *obj = json_object_iter_value(iter);
+		broker_t broker;
+		memset(&broker, 0, sizeof broker);
+		broker.hostname = (char *)json_string_value(json_object_get(obj, "host"));
+		broker.port = json_integer_value(json_object_get(obj, "port"));
+		broker.id = json_integer_value(json_object_get(obj, "id"));
+		broker_connect(&broker);
+		/* TODO: check for "Leader Not Available" responses and wait/retry */
+		rc = TopicMetadataRequest(&broker, NULL, brokersOut, metadataOut);
+		close(broker.fd);
+		if (rc == 0)
+			break;
+	}
+	json_decref(brokers);
+	return rc;
+}
+
+static json_t *
+bootstrap_brokers(zhandle_t *zh)
+{
+	int rc, i;
+	struct String_vector ids;
+	json_t *js;
+	rc = zoo_get_children(zh, "/brokers/ids", 0, &ids);
+	if (rc != ZOK || ids.count == 0)
+		return NULL;
+	js = json_object();
+	for (i = 0; i < ids.count; i++) {
+		char *znode;
+		json_t *broker;
+		znode = string_builder("/brokers/ids/%s", ids.data[i]);
+		assert(znode);
+		broker = get_json_from_znode(zh, znode);
+		free(znode);
+		if (broker) {
+			/* steal reference to broker */
+			json_object_set_new(js, ids.data[i], broker);
+		}
+	}
+	return js;
 }
 
 static partition_metadata_t *
@@ -223,30 +408,6 @@ finish:
 	return res;
 }
 
-static void
-broker_message_map_free(hashtable_t *map)
-{
-	void *i, *j, *k;
-	if (map) {
-		i = hashtable_iter(map);
-		for (; i; i = hashtable_iter_next(map, i)) {
-			hashtable_t *topics = hashtable_iter_value(i);
-			j = hashtable_iter(topics);
-			for (; j; j = hashtable_iter_next(topics, j)) {
-				hashtable_t *partitions = hashtable_iter_value(j);
-				k = hashtable_iter(partitions);
-				for (; k; k = hashtable_iter_next(partitions, k)) {
-					struct vector *vec = hashtable_iter_value(k);
-					vector_free(vec);
-				}
-				hashtable_destroy(partitions);
-			}
-			hashtable_destroy(topics);
-		}
-		hashtable_destroy(map);
-	}
-}
-
 static hashtable_t *
 broker_message_map(struct kafka_producer *p, struct vector *messages)
 {
@@ -293,6 +454,30 @@ broker_message_map(struct kafka_producer *p, struct vector *messages)
 		vector_push_back(msgSet, msg);
 	}
 	return map;
+}
+
+static void
+broker_message_map_free(hashtable_t *map)
+{
+	void *i, *j, *k;
+	if (map) {
+		i = hashtable_iter(map);
+		for (; i; i = hashtable_iter_next(map, i)) {
+			hashtable_t *topics = hashtable_iter_value(i);
+			j = hashtable_iter(topics);
+			for (; j; j = hashtable_iter_next(topics, j)) {
+				hashtable_t *partitions = hashtable_iter_value(j);
+				k = hashtable_iter(partitions);
+				for (; k; k = hashtable_iter_next(partitions, k)) {
+					struct vector *vec = hashtable_iter_value(k);
+					vector_free(vec);
+				}
+				hashtable_destroy(partitions);
+			}
+			hashtable_destroy(topics);
+		}
+		hashtable_destroy(map);
+	}
 }
 
 static int
@@ -347,170 +532,4 @@ dispatch(struct kafka_producer *p, struct vector *messages, int16_t sync, struct
 	broker_message_map_free(map);
 	*out = failedMessages;
 	return res;
-}
-
-KAFKA_EXPORT int
-kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg,
-		int16_t sync)
-{
-	/**
-	 * Kafka provides a few different synchronization levels.
-	 * - KAFKA_REQUEST_ASYNC: no ack response
-	 * - KAFKA_REQUEST_SYNC: ack response after message is written to log
-	 * - KAFKA_REQUEST_FULL_SYNC: ack response after full replication
-	 *
-	 * Async should be handled a bit differently. You need to build up a
-	 * data structure of N messages and batch them all at once at a later
-	 * time. Probably using a separate thread.
-	 */
-	int res;
-
-	CHECK_OBJ_NOTNULL(p, KAFKA_PRODUCER_MAGIC);
-
-	/**
-	 * This works for sending a single message but not when you're batching
-	 * many messages to different topics partitions and brokers.
-	 *
-	 * You would have to rebuild every request object and reassign messages
-	 * depending on which broker now controls which topic-partition (right?)
-	 *
-	 * Apache Kafka's (v0.8) producer library loops over each message and
-	 * groups them into the appropriate buckets on send.
-	 *
-	 * See partitionAndCollate() in producer/async/DefaultEventHandler.scala
-	 */
-
-	struct vector *vec = vector_new(1, NULL);
-	vector_push_back(vec, msg);
-	int retries = 4;
-
-	while (retries > 0) {
-		struct vector *failures;
-		res = dispatch(p, vec, sync, &failures);
-		if (res == KAFKA_OK)
-			break;
-
-		/**
-		 * Sometimes a failure happens because a broker just dies.
-		 * In this case there will be no response, but res != KAFKA_OK.
-		 * Just update metadata and retry the request.
-		 */
-
-		if (failures) {
-			/* vector of messages that failed. simple enough to retry */
-			vec = failures;
-		}
-
-		producer_metadata_free(p);
-		if (bootstrap_metadata(p->zh, &p->brokers, &p->metadata) == -1) {
-			res = KAFKA_METADATA_ERROR;
-			break;
-		}
-		retries--;
-	}
-
-	if (retries == 0)
-		res = -1;
-	return res;
-}
-
-static void
-producer_metadata_free(struct kafka_producer *p)
-{
-	void *i, *j;
-
-	i = hashtable_iter(p->brokers);
-	for (; i; i = hashtable_iter_next(p->brokers, i)) {
-		int fd;
-		broker_t *broker = hashtable_iter_value(i);
-		if (broker) {
-			close(broker->fd);
-			free(broker->hostname);
-			free(broker);
-		}
-	}
-
-	/* TODO: setup value free in hashtable_create so this can go away */
-	i = hashtable_iter(p->metadata);
-	for (; i; i = hashtable_iter_next(p->metadata, i)) {
-		topic_metadata_t *topic = hashtable_iter_value(i);
-		j = hashtable_iter(topic->partitions);
-		for (; j; j = hashtable_iter_next(topic->partitions, j)) {
-			partition_metadata_t *part = hashtable_iter_value(j);
-			hashtable_destroy(part->replicas);
-			hashtable_destroy(part->isr);
-			free(part);
-		}
-		hashtable_destroy(topic->partitions);
-		free(topic->topic);
-		free(topic);
-	}
-	hashtable_destroy(p->brokers);
-	hashtable_destroy(p->metadata);
-}
-
-KAFKA_EXPORT void
-kafka_producer_free(struct kafka_producer *p)
-{
-	CHECK_OBJ_NOTNULL(p, KAFKA_PRODUCER_MAGIC);
-	if (p->zh)
-		zookeeper_close(p->zh);
-	producer_metadata_free(p);
-	free(p);
-}
-
-static int
-bootstrap_metadata(zhandle_t *zh, hashtable_t **brokersOut, hashtable_t **metadataOut)
-{
-	int rc = 0;
-	void *iter;
-	json_t *brokers;
-	brokers = bootstrap_brokers(zh);
-	if (!brokers) {
-		return -1;
-	}
-
-	/* query for metadata */
-	iter = json_object_iter(brokers);
-	for (; iter; iter = json_object_iter_next(brokers, iter)) {
-		json_t *obj = json_object_iter_value(iter);
-		broker_t broker;
-		memset(&broker, 0, sizeof broker);
-		broker.hostname = (char *)json_string_value(json_object_get(obj, "host"));
-		broker.port = json_integer_value(json_object_get(obj, "port"));
-		broker.id = json_integer_value(json_object_get(obj, "id"));
-		broker_connect(&broker);
-		/* TODO: check for "Leader Not Available" responses and wait/retry */
-		rc = TopicMetadataRequest(&broker, NULL, brokersOut, metadataOut);
-		close(broker.fd);
-		if (rc == 0)
-			break;
-	}
-	json_decref(brokers);
-	return rc;
-}
-
-static json_t *
-bootstrap_brokers(zhandle_t *zh)
-{
-	int rc, i;
-	struct String_vector ids;
-	json_t *js;
-	rc = zoo_get_children(zh, "/brokers/ids", 0, &ids);
-	if (rc != ZOK || ids.count == 0)
-		return NULL;
-	js = json_object();
-	for (i = 0; i < ids.count; i++) {
-		char *znode;
-		json_t *broker;
-		znode = string_builder("/brokers/ids/%s", ids.data[i]);
-		assert(znode);
-		broker = get_json_from_znode(zh, znode);
-		free(znode);
-		if (broker) {
-			/* steal reference to broker */
-			json_object_set_new(js, ids.data[i], broker);
-		}
-	}
-	return js;
 }
