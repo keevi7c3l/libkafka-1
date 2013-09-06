@@ -183,32 +183,6 @@ uint32_t crc32(uint32_t crc, const void *buf, size_t size);
 void producer_init_watcher(zhandle_t *zp, int type, int state,
 			const char *path, void *ctx);
 
-/* producer/produce_request.c */
-
-produce_request_t *produce_request_new(int16_t sync);
-void produce_request_free(produce_request_t *r);
-int produce_request_append(struct kafka_producer *p, produce_request_t *req,
-			struct kafka_message *msg);
-
-/*
- * {
- *     "foo_topic": {
- *         "partition_0": [
- *             { msg 1 },
- *             { msg 2},
- *         ],
- *         "partition_1": [
- *             { msg 3 }
- *         ]
- *     },
- *     "bar_topic": {
- *         "partition_1": [
- *             { msg 4 }
- *         ]
- *     }
- * }
- */
-
 /* metadata/metadata_request.c */
 
 int TopicMetadataRequest(broker_t *broker, const char **topics,

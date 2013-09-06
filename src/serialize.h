@@ -49,6 +49,5 @@ size_t serialize_topics_and_partitions(hashtable_t *topicsAndPartitions,
 				KafkaBuffer *buffer);
 inline size_t request_header_pack(request_header_t *header,
 				const char *client, uint8_t *ptr);
-size_t produce_request_serialize(produce_request_t *req, KafkaBuffer *buffer);
 
 #endif

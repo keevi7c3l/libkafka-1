@@ -29,7 +29,6 @@ libkafka_la_SOURCES = \
 	buffer.c \
 	metadata/partition_metadata.c \
 	metadata/metadata_request.c \
-	producer/produce_request.c \
 	producer/producer.c \
 	producer/watchers.c \
 	vector.c \
