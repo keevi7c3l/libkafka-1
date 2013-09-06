@@ -130,7 +130,7 @@ parse_produce_response(KafkaBuffer *buffer)
 
 			if (error != KAFKA_OK) {
 				struct vector *partitionFailures;
-				printf("%s\n", kafka_status_string(error));
+				fprintf(stderr, "%s\n", kafka_status_string(error));
 				if (!failures) {
 					failures = hashtable_create(jenkins, keycmp, free, NULL);
 				}
@@ -178,6 +178,11 @@ send_produce_request(struct kafka_producer *p, int32_t brokerId,
 	uint32_pack(header.size-4, &buffer->data[0]);
 
 	broker_t *broker = hashtable_get(p->brokers, &brokerId);
+	if (!broker) {
+		res = -1;
+		goto finish;
+	}
+
 	do {
 		rc = write(broker->fd, buffer->data, buffer->cur - buffer->data);
 	} while (rc == -1 && errno == EINTR);
@@ -189,7 +194,6 @@ send_produce_request(struct kafka_producer *p, int32_t brokerId,
 
 	if (sync != KAFKA_REQUEST_ASYNC) {
 		int32_t rlen = 0;
-
 		rc = read(broker->fd, &rlen, 4);
 		if (rc <= 0) {
 			res = -1;
@@ -222,7 +226,7 @@ finish:
 static void
 broker_message_map_free(hashtable_t *map)
 {
-	void *i, *j;
+	void *i, *j, *k;
 	if (map) {
 		i = hashtable_iter(map);
 		for (; i; i = hashtable_iter_next(map, i)) {
@@ -230,6 +234,11 @@ broker_message_map_free(hashtable_t *map)
 			j = hashtable_iter(topics);
 			for (; j; j = hashtable_iter_next(topics, j)) {
 				hashtable_t *partitions = hashtable_iter_value(j);
+				k = hashtable_iter(partitions);
+				for (; k; k = hashtable_iter_next(partitions, k)) {
+					struct vector *vec = hashtable_iter_value(k);
+					vector_free(vec);
+				}
 				hashtable_destroy(partitions);
 			}
 			hashtable_destroy(topics);
@@ -287,10 +296,37 @@ broker_message_map(struct kafka_producer *p, struct vector *messages)
 }
 
 static int
+handle_topics_partitions_failures(hashtable_t *topicsPartitions,
+				hashtable_t *failedRequest, struct vector *failedMessages)
+{
+	int i, j;
+	void *topic_iter = hashtable_iter(failedRequest);
+	for (; topic_iter; topic_iter = hashtable_iter_next(failedRequest, topic_iter)) {
+		char *topic = hashtable_iter_key(topic_iter);
+		struct vector *pids = hashtable_iter_value(topic_iter);
+
+		hashtable_t *partitionsForTopic = hashtable_get(topicsPartitions, topic);
+
+		for (i = 0; i < vector_size(pids); i++) {
+			struct vector *msgSet;
+			int32_t pid = *(int32_t *)vector_at(pids, i);
+			msgSet = hashtable_get(partitionsForTopic, &pid);
+			if (msgSet) {
+				for (j = 0; j < vector_size(msgSet); j++) {
+					vector_push_back(failedMessages, vector_at(msgSet, j));
+				}
+			}
+		}
+	}
+	return 0;
+}
+
+static int
 dispatch(struct kafka_producer *p, struct vector *messages, int16_t sync, struct vector **out)
 {
 	void *iter;
-	struct vector *failedRequests = NULL;
+	int i;
+	struct vector *failedMessages = NULL;
 	hashtable_t *map = broker_message_map(p, messages);
 	int res = 0;
 
@@ -299,15 +335,17 @@ dispatch(struct kafka_producer *p, struct vector *messages, int16_t sync, struct
 		hashtable_t *topicsPartitions = hashtable_iter_value(iter);
 		hashtable_t *failures;
 		res = send_produce_request(p, brokerId, topicsPartitions, sync, &failures);
+
 		if (failures) {
-			if (!failedRequests) {
-				failedRequests = vector_new(0, NULL);
-			}
-			vector_push_back(failedRequests, failures);
+			res = -1;
+			if (!failedMessages)
+				failedMessages = vector_new(0, NULL);
+			handle_topics_partitions_failures(topicsPartitions, failures, failedMessages);
 		}
 	}
+
 	broker_message_map_free(map);
-	*out = failedRequests;
+	*out = failedMessages;
 	return res;
 }
 
@@ -352,22 +390,27 @@ kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg,
 		if (res == KAFKA_OK)
 			break;
 
+		/**
+		 * Sometimes a failure happens because a broker just dies.
+		 * In this case there will be no response, but res != KAFKA_OK.
+		 * Just update metadata and retry the request.
+		 */
+
 		if (failures) {
-			int i;
-			for (i = 0; i < vector_size(failures); i++) {
-				hashtable_t *topicPartitionFailure;
-				topicPartitionFailure = vector_at(failures, i);
-				void *iter = hashtable_iter(topicPartitionFailure);
-				for (; iter; iter = hashtable_iter_next(topicPartitionFailure, iter)) {
-					printf("%s\n", (char *)hashtable_iter_key(iter));
-				}
-			}
+			/* vector of messages that failed. simple enough to retry */
+			vec = failures;
 		}
+
+		producer_metadata_free(p);
+		if (bootstrap_metadata(p->zh, &p->brokers, &p->metadata) == -1) {
+			res = KAFKA_METADATA_ERROR;
+			break;
+		}
+		retries--;
 
 		/**
 		 * TODO: retry individual failures with new metadata.
 		 */
-		break;
 
 		/* request failed, update metadata and try again */
 /*
