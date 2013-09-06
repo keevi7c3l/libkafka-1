@@ -128,10 +128,9 @@ parse_produce_response(KafkaBuffer *buffer)
 			buffer->cur += uint16_unpack(buffer->cur, &error);
 			buffer->cur += uint64_unpack(buffer->cur, &offset);
 
-			printf("%s\n", kafka_status_string(error));
-
 			if (error != KAFKA_OK) {
 				struct vector *partitionFailures;
+				printf("%s\n", kafka_status_string(error));
 				if (!failures) {
 					failures = hashtable_create(jenkins, keycmp, free, NULL);
 				}
@@ -143,7 +142,6 @@ parse_produce_response(KafkaBuffer *buffer)
 				int32_t *pid = malloc(sizeof(int32_t));
 				*pid = partition;
 				vector_push_back(partitionFailures, pid);
-				printf("foo\n");
 			}
 		}
 	}
@@ -265,7 +263,6 @@ broker_message_map(struct kafka_producer *p, struct vector *messages)
 		int32_t *partId = malloc(sizeof(int32_t));
 		*leaderId = pm->leader->id;
 		*partId = pm->partition_id;
-		printf("%d\n", *partId);
 
 		topics = hashtable_get(map, leaderId);
 		if (!topics) {
@@ -350,15 +347,14 @@ kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg,
 	int retries = 4;
 
 	while (retries > 0) {
-		sleep(15);
 		struct vector *failures;
 		res = dispatch(p, vec, sync, &failures);
 		if (res == KAFKA_OK)
 			break;
+
 		if (failures) {
 			int i;
 			for (i = 0; i < vector_size(failures); i++) {
-				printf("i = %d\n", i);
 				hashtable_t *topicPartitionFailure;
 				topicPartitionFailure = vector_at(failures, i);
 				void *iter = hashtable_iter(topicPartitionFailure);

@@ -2,3 +2,6 @@ Finish metadata support so I can get rid of zookeeper metadata support.
     - Don't setup internal data structures from zookeeper JSON
 
 Non-blocking socket I/O
+
+Remove zookeeper/json from producer and potentially the whole project
+until I implement consumers.
