@@ -57,8 +57,10 @@ KafkaBufferReserve(KafkaBuffer *buffer, size_t size)
 {
 	/**
 	 * Make sure there's enough room in the buffer.
+	 * @todo: get rid of buffer->len
 	 */
-	if (size >= buffer->alloced - buffer->len) {
+	if (size >= buffer->alloced - buffer->len ||
+		size >= buffer->alloced - (buffer->cur - buffer->data)) {
 		do {
 			KafkaBufferResize(buffer);
 		} while (size >= buffer->alloced - buffer->len);

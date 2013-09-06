@@ -144,6 +144,130 @@ parse_produce_response(KafkaBuffer *buffer)
 }
 
 static int
+send_produce_request(struct kafka_producer *p, hashtable_t *request, int16_t sync)
+{
+	int rc;
+	int res = 0;
+	int32_t correlation_id = 1;
+	void *iter;
+	iter = hashtable_iter(request);
+	for (; iter; iter = hashtable_iter_next(request, iter)) {
+		size_t len;
+		request_header_t header;
+		const char *client = "foo";
+		KafkaBuffer *buffer = KafkaBufferNew(0);
+		int32_t brokerId = *(int32_t *)hashtable_iter_key(iter);
+		hashtable_t *topics_partitions = hashtable_iter_value(iter);
+
+		memset(&header, 0, sizeof header);
+		header.apikey = PRODUCE;
+		header.correlation_id = correlation_id++;
+		len = sizeof header;
+		len += 2 + strlen(client);
+		len += 2 + 4 + 4; /* acks, ttl, topics */
+
+		KafkaBufferReserve(buffer, len);
+		buffer->cur = buffer->data;
+		buffer->cur += request_header_pack(&header, client, buffer->cur);
+		buffer->cur += uint16_pack(sync, buffer->cur);
+		buffer->cur += uint32_pack(1500, buffer->cur); /*ttl*/
+
+		header.size = serialize_topics_and_partitions(topics_partitions, buffer);
+		uint32_pack(header.size-4, &buffer->data[0]);
+		print_bytes(buffer->data, buffer->cur - buffer->data);
+
+		broker_t *broker = hashtable_get(p->brokers, &brokerId);
+		do {
+			rc = write(broker->fd, buffer->data, buffer->cur - buffer->data);
+		} while (rc == -1 && errno == EINTR);
+
+		if (rc == -1) {
+			res = -1;
+			goto finish;
+		}
+
+		if (sync != KAFKA_REQUEST_ASYNC) {
+			int32_t rlen = 0;
+
+			rc = read(broker->fd, &rlen, 4);
+			if (rc == -1) {
+				res = -1;
+				goto finish;
+			}
+
+			rlen = ntohl(rlen);
+
+			if (rlen > 0) {
+				KafkaBuffer *rbuf = KafkaBufferNew(rlen);
+				rc = read(broker->fd, rbuf->data, rbuf->alloced);
+				if (rc != rlen) {
+					res = -1;
+					KafkaBufferFree(rbuf);
+					goto finish;
+				}
+				rbuf->len = rbuf->alloced;
+				rbuf->cur = rbuf->data;
+				/**
+				 * TODO: need to return errors for each topic-partition
+				 * error.
+				 */
+				rc = parse_produce_response(rbuf);
+				if (rc != KAFKA_OK) {
+					res = -1;
+				}
+				KafkaBufferFree(rbuf);
+			}
+		}
+	finish:
+		KafkaBufferFree(buffer);
+	}
+}
+
+static hashtable_t *
+broker_message_map(struct kafka_producer *p, struct vector *messages)
+{
+	int i;
+	hashtable_t *map;
+
+	map = hashtable_create(int32_hash, int32_cmp, free, NULL);
+	for (i = 0; i < vector_size(messages); i++) {
+		partition_metadata_t *pm;
+		hashtable_t *topics;
+		hashtable_t *topic_partitions;
+		struct vector *msgSet;
+
+		struct kafka_message *msg = vector_at(messages, i);
+
+		/* TODO: make use of different partitioners */
+		pm = pick_random_topic_partition(p, msg);
+		int32_t *leaderId = malloc(sizeof(int32_t));
+		int32_t *partId = malloc(sizeof(int32_t));
+		*leaderId = pm->leader->id;
+		*partId = pm->partition_id;
+
+		topics = hashtable_get(map, leaderId);
+		if (!topics) {
+			topics = hashtable_create(jenkins, keycmp, free, NULL);
+			hashtable_set(map, leaderId, topics);
+		}
+
+		topic_partitions = hashtable_get(topics, msg->topic);
+		if (!topic_partitions) {
+			topic_partitions = hashtable_create(int32_hash, int32_cmp, free, NULL);
+			hashtable_set(topics, strdup(msg->topic), topic_partitions);
+		}
+
+		msgSet = hashtable_get(topic_partitions, partId);
+		if (!msgSet) {
+			msgSet = vector_new(0, NULL);
+			hashtable_set(topic_partitions, partId, msgSet);
+		}
+		vector_push_back(msgSet, msg);
+	}
+	return map;
+}
+
+static int
 send_request(struct kafka_producer *p, broker_t *broker, produce_request_t *req)
 {
 	int rc;
@@ -233,30 +357,42 @@ kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg,
 	 * See partitionAndCollate() in producer/async/DefaultEventHandler.scala
 	 */
 
-	tp = pick_random_topic_partition(p, msg);
-	if (!tp || !tp->leader) {
-		return -1;
-	}
+/*
+Build a hashtable like so and serialize each broker's data
 
-	req = produce_request_new(sync);
-	topic = calloc(1, sizeof *topic);
-	topic->topic = msg->topic;
-	topic->partitions = hashtable_create(int32_hash, int32_cmp, NULL, NULL);
+{ broker: { topic: { partition: [msg set] } } }
 
-	part = calloc(1, sizeof *part);
-	part->messages = vector_new(1, NULL);
-	part->partition = tp->partition_id;
+{
+  0: {
+    'topic1': {
+        0: [
+          msg,
+	  msg
+        ],
+	2: [
+	  msg
+	]
+    }
+  },
+  1: {
+    'topic1': {
+      1: [
+        msg
+      ]
+    }
+  }
+}
+*/
 
-	vector_push_back(part->messages, msg);
-
-	hashtable_set(topic->partitions, &tp->partition_id, part);
-	hashtable_set(req->topics_partitions, strdup(msg->topic), topic);
-
+	struct vector *vec = vector_new(1, NULL);
+	vector_push_back(vec, msg);
+	hashtable_t *map = broker_message_map(p, vec);
 	int retries = 4;
 
 	while (retries > 0) {
 		res = 0;
-		int rc = send_request(p, tp->leader, req);
+//		int rc = send_request(p, tp->leader, req);
+		int rc = send_produce_request(p, map, sync);
 		if (rc == 0) {
 			break;
 		}
@@ -284,7 +420,6 @@ kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg,
 		retries--;
 	}
 
-	produce_request_free(req);
 	if (retries == 0)
 		res = -1;
 	return res;

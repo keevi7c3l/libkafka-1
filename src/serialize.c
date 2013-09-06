@@ -200,6 +200,59 @@ serialize_topic_partitions_to_buffer(topic_partitions_t *topic, KafkaBuffer *buf
 	return buffer->len - offset;
 }
 
+size_t
+serialize_topic_partitions(hashtable_t *partitions, KafkaBuffer *buffer)
+{
+	void *iter;
+	unsigned u;
+	size_t offset = buffer->cur - buffer->data;
+	iter = hashtable_iter(partitions);
+	for (; iter; iter = hashtable_iter_next(partitions, iter)) {
+		int32_t msgSetSize = 0;
+		size_t msgSetSizeOffset;
+		int32_t partId = *(int32_t *)hashtable_iter_key(iter);
+		struct vector *messages = hashtable_iter_value(iter);
+
+		KafkaBufferReserve(buffer, sizeof(int32_t) * 2);
+		buffer->cur += uint32_pack(partId, buffer->cur);
+		msgSetSizeOffset = buffer->cur - buffer->data;
+		buffer->cur += sizeof(int32_t); /* msgSetSize is written later */
+
+		for (u = 0; u < vector_size(messages); u++) {
+			struct kafka_message *msg = vector_at(messages, u);
+			size_t msgSize = sizeof(int64_t) + sizeof(int32_t);
+			msgSize += kafka_message_packed_size(msg);
+			KafkaBufferReserve(buffer, msgSize);
+			buffer->cur += kafka_message_serialize0(msg, buffer->cur);
+			msgSetSize += msgSize;
+		}
+		uint32_pack(msgSetSize, &buffer->data[msgSetSizeOffset]);
+	}
+	return (buffer->cur - buffer->data) - offset;
+}
+
+size_t
+serialize_topics_and_partitions(hashtable_t *topicsAndPartitions, KafkaBuffer *buffer)
+{
+	size_t len;
+	void *u, *v;
+
+	buffer->cur += uint32_pack(count_keys(topicsAndPartitions), buffer->cur);
+
+	u = hashtable_iter(topicsAndPartitions);
+	for (; u; u = hashtable_iter_next(topicsAndPartitions, u)) {
+		size_t topicLen;
+		const char *topic = hashtable_iter_key(u);
+		hashtable_t *partitions = hashtable_iter_value(u);
+		topicLen = 2 + strlen(topic) + 4;
+		KafkaBufferReserve(buffer, topicLen);
+		buffer->cur += string_pack(topic, buffer->cur);
+		buffer->cur += uint32_pack(count_keys(partitions), buffer->cur);
+		serialize_topic_partitions(partitions, buffer);
+	}
+	return buffer->cur - buffer->data;
+}
+
 inline size_t
 request_header_pack(request_header_t *header, const char *client, uint8_t *ptr)
 {
