@@ -148,7 +148,7 @@ send_produce_request(struct kafka_producer *p, hashtable_t *request, int16_t syn
 {
 	int rc;
 	int res = 0;
-	int32_t correlation_id = 1;
+	int32_t correlation_id = 0;
 	void *iter;
 	iter = hashtable_iter(request);
 	for (; iter; iter = hashtable_iter_next(request, iter)) {
@@ -174,7 +174,6 @@ send_produce_request(struct kafka_producer *p, hashtable_t *request, int16_t syn
 
 		header.size = serialize_topics_and_partitions(topics_partitions, buffer);
 		uint32_pack(header.size-4, &buffer->data[0]);
-		print_bytes(buffer->data, buffer->cur - buffer->data);
 
 		broker_t *broker = hashtable_get(p->brokers, &brokerId);
 		do {
