@@ -31,22 +31,24 @@
     <!-- MAIN CONTENT -->
     <div id="main_content_wrap" class="outer">
       <section id="main_content" class="inner">
-        <h1>
-<a name="libkafka" class="anchor" href="#libkafka"><span class="octicon octicon-link"></span></a>libkafka</h1>
-
-<p>C Library for interacting with Apache Kafka 0.8. I started this library because
-there doesn't seem to be a decent Kafka library for C.</p>
+        <p>C library for interacting with Apache Kafka 0.8.</p>
 
 <p>License: 2-Clause BSD</p>
 
-<p>You need the Apache ZooKeeper C library installed (zookeeper_mt).</p>
+<p>You need the Apache ZooKeeper C library installed (zookeeper_mt). Zookeeper and
+jansson (for JSON parsing) can probably be removed from the producer since the
+Metadata API provides everything a producer needs.</p>
 
 <p>For setting up a dev cluster on a single box, I used this as an example: <a href="http://www.michael-noll.com/blog/2013/03/13/running-a-multi-broker-apache-kafka-cluster-on-a-single-node/">Running a Multi-Broker Apache Kafka 0.8 Cluster on a Single Node</a></p>
 
 <p>I'm also documenting the wire protocol as I go along. Documentation can be found
-under the docs/ directory in this repo.</p>
+under the docs/ directory in this repo or on <a href="http://tapestry.io/blog/kafka_wire_format.html">http://tapestry.io/blog/kafka_wire_format.html</a></p>
 
-<p><em>Warning!</em> This isn't ready for primetime yet unless you're feeling adventurous.</p>
+<p><em>Warning!</em> This isn't ready for production yet.</p>
+
+<p>At the moment I only support producer and metadata requests/responses. I provide
+APIs for producing a single message to a given topic and batching multiple
+messages to different topics and partitions in a single go.</p>
       </section>
     </div>
 
