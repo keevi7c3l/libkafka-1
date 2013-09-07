@@ -334,6 +334,22 @@ pick_random_topic_partition(struct kafka_producer *p, struct kafka_message *msg)
 	return hashtable_get(topic->partitions, &part);
 }
 
+static void
+mark_failure(hashtable_t *failures, const char *topic, int32_t partition)
+{
+	int32_t *pid;
+	struct vector *partitionFailures;
+	assert(failures);
+	partitionFailures = hashtable_get(failures, topic);
+	if (!partitionFailures) {
+		partitionFailures = vector_new(0, free);
+		hashtable_set(failures, strdup(topic), partitionFailures);
+	}
+	pid = malloc(sizeof(int32_t));
+	*pid = partition;
+	vector_push_back(partitionFailures, pid);
+}
+
 static hashtable_t *
 parse_produce_response(KafkaBuffer *buffer)
 {
@@ -355,20 +371,33 @@ parse_produce_response(KafkaBuffer *buffer)
 			buffer->cur += uint64_unpack(buffer->cur, &offset);
 
 			if (error != KAFKA_OK) {
-				struct vector *partitionFailures;
 				fprintf(stderr, "%s\n", kafka_status_string(error));
 				if (!failures) {
 					failures = hashtable_create(jenkins, keycmp, free, NULL);
 				}
-				partitionFailures = hashtable_get(failures, topic);
-				if (!partitionFailures) {
-					partitionFailures = vector_new(0, NULL);
-					hashtable_set(failures, strdup(topic), partitionFailures);
-				}
-				int32_t *pid = malloc(sizeof(int32_t));
-				*pid = partition;
-				vector_push_back(partitionFailures, pid);
+				mark_failure(failures, topic, partition);
 			}
+		}
+	}
+	return failures;
+}
+
+static hashtable_t *
+mark_every_failure(hashtable_t *topicsAndPartitions)
+{
+	/**
+	 * Marks every topic partition as a failure.
+	 */
+	void *i, *j;
+	hashtable_t *failures = hashtable_create(jenkins, keycmp, free, NULL);
+	i = hashtable_iter(topicsAndPartitions);
+	for (; i; i = hashtable_iter_next(topicsAndPartitions, i)) {
+		const char *topic = hashtable_iter_key(i);
+		hashtable_t *partitions = hashtable_iter_value(i);
+		j = hashtable_iter(partitions);
+		for (; j; j = hashtable_iter_next(partitions, j)) {
+			int32_t pid = *(int32_t *)hashtable_iter_key(j);
+			mark_failure(failures, topic, pid);
 		}
 	}
 	return failures;
@@ -405,6 +434,7 @@ send_produce_request(struct kafka_producer *p, int32_t brokerId,
 
 	broker_t *broker = hashtable_get(p->brokers, &brokerId);
 	if (!broker) {
+		failures = mark_every_failure(topics_partitions);
 		res = -1;
 		goto finish;
 	}
@@ -414,6 +444,7 @@ send_produce_request(struct kafka_producer *p, int32_t brokerId,
 	} while (rc == -1 && errno == EINTR);
 
 	if (rc == -1) {
+		failures = mark_every_failure(topics_partitions);
 		res = -1;
 		goto finish;
 	}
@@ -422,6 +453,7 @@ send_produce_request(struct kafka_producer *p, int32_t brokerId,
 		int32_t rlen = 0;
 		rc = read(broker->fd, &rlen, 4);
 		if (rc <= 0) {
+			failures = mark_every_failure(topics_partitions);
 			res = -1;
 			goto finish;
 		}
@@ -432,6 +464,7 @@ send_produce_request(struct kafka_producer *p, int32_t brokerId,
 			KafkaBuffer *rbuf = KafkaBufferNew(rlen);
 			rc = read(broker->fd, rbuf->data, rbuf->alloced);
 			if (rc != rlen) {
+				failures = mark_every_failure(topics_partitions);
 				res = -1;
 				KafkaBufferFree(rbuf);
 				goto finish;
@@ -530,7 +563,6 @@ handle_topics_partitions_failures(hashtable_t *topicsPartitions,
 	for (; topic_iter; topic_iter = hashtable_iter_next(failedRequest, topic_iter)) {
 		char *topic = hashtable_iter_key(topic_iter);
 		struct vector *pids = hashtable_iter_value(topic_iter);
-
 		hashtable_t *partitionsForTopic = hashtable_get(topicsPartitions, topic);
 
 		for (i = 0; i < vector_size(pids); i++) {
