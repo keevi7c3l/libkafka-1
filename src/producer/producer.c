@@ -180,6 +180,47 @@ kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg,
 	return res;
 }
 
+KAFKA_EXPORT int
+kafka_producer_send_batch(struct kafka_producer *p,
+			struct kafka_message_set *set, int16_t sync)
+{
+	int res, retries = 4;
+	CHECK_OBJ_NOTNULL(p, KAFKA_PRODUCER_MAGIC);
+
+	if (!set)
+		return -1;
+	struct vector *vec = set->messages;
+
+	while (retries > 0) {
+		struct vector *failures;
+		res = dispatch(p, vec, sync, &failures);
+		if (res == KAFKA_OK)
+			break;
+
+		/**
+		 * Sometimes a failure happens because a broker just dies.
+		 * In this case there will be no response, but res != KAFKA_OK.
+		 * Just update metadata and retry the request.
+		 */
+
+		if (failures) {
+			/* vector of messages that failed. simple enough to retry */
+			vec = failures;
+		}
+
+		producer_metadata_free(p);
+		if (bootstrap_metadata(p->zh, &p->brokers, &p->metadata) == -1) {
+			res = KAFKA_METADATA_ERROR;
+			break;
+		}
+		retries--;
+	}
+
+	if (retries == 0)
+		res = -1;
+	return res;
+}
+
 KAFKA_EXPORT void
 kafka_producer_free(struct kafka_producer *p)
 {

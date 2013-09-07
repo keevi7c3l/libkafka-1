@@ -24,40 +24,42 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <stdio.h>
-#include <string.h>
+#include <assert.h>
+
 #include <kafka.h>
+#include "kafka-private.h"
 
-int main(int argc, char **argv)
+static void msg_free(void *ptr);
+
+KAFKA_EXPORT struct kafka_message_set *
+kafka_message_set_new(void)
 {
-	char *zkServer = "localhost:2181";
-	struct kafka_producer *p;
-	if (argc == 2) {
-		zkServer = argv[1];
+	struct kafka_message_set *set;
+	set = calloc(1, sizeof *set);
+	set->messages = vector_new(0, msg_free);
+	return set;
+}
+
+KAFKA_EXPORT void
+kafka_message_set_free(struct kafka_message_set *set)
+{
+	if (set) {
+		vector_free(set->messages);
+		free(set);
 	}
-	p = kafka_producer_new(zkServer);
-	if (kafka_producer_status(p) == KAFKA_OK) {
-		struct kafka_message *msg;
-		msg = kafka_message_new("test", "hello world");
-		if (kafka_producer_send(p, msg, KAFKA_REQUEST_FULL_SYNC) != KAFKA_OK) {
-			fprintf(stderr, "request failed\n");
-		}
-		kafka_message_free(msg);
+}
 
-		struct kafka_message_set *set = kafka_message_set_new();
-		kafka_message_set_append(set, kafka_message_new("test", "test1"));
-		kafka_message_set_append(set, kafka_message_new("test", "test2"));
-		kafka_message_set_append(set, kafka_message_new("test", "test3"));
-		kafka_message_set_append(set, kafka_message_new("foobar", "foobar1"));
-		kafka_message_set_append(set, kafka_message_new("foobar", "foobar2"));
-		kafka_message_set_append(set, kafka_message_new("foobar", "foobar3"));
+KAFKA_EXPORT size_t
+kafka_message_set_append(struct kafka_message_set *set, struct kafka_message *msg)
+{
+	assert(set);
+	vector_push_back(set->messages, msg);
+	return vector_size(set->messages);
+}
 
-		if (kafka_producer_send_batch(p, set, KAFKA_REQUEST_FULL_SYNC) != KAFKA_OK) {
-			fprintf(stderr, "batch request failed\n");
-		}
-
-		kafka_message_set_free(set);
-		kafka_producer_free(p);
-	}
-	return 0;
+static void
+msg_free(void *ptr)
+{
+	struct kafka_message *msg = (struct kafka_message *)ptr;
+	kafka_message_free(msg);
 }

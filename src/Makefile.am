@@ -25,6 +25,7 @@ libkafka_la_SOURCES = \
 	utils.c \
 	crc32.c \
 	message.c \
+	message_set.c \
 	serialize.c \
 	buffer.c \
 	metadata/partition_metadata.c \

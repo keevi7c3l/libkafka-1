@@ -28,6 +28,7 @@
 #define _LIBKAFKA_H_
 
 #include <stdint.h>
+#include <stdlib.h>
 
 #define KAFKA_OK                              0
 #define KAFKA_UNKNOWN                        -1
@@ -58,6 +59,7 @@
 
 struct kafka_producer;
 struct kafka_message;
+struct kafka_message_set;
 
 /* kafka.c */
 const char *kafka_status_string(int status);
@@ -67,6 +69,8 @@ struct kafka_producer *kafka_producer_new(const char *zkServer);
 void kafka_producer_free(struct kafka_producer *p);
 int kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg,
 			int16_t sync);
+int kafka_producer_send_batch(struct kafka_producer *p, struct kafka_message_set *set,
+			int16_t sync);
 int kafka_producer_status(struct kafka_producer *p);
 
 /* message.c */
@@ -74,5 +78,11 @@ struct kafka_message *kafka_message_new(const char *topic, const char *value);
 struct kafka_message *kafka_keyed_message_new(const char *topic, const char *key,
 					const char *value);
 void kafka_message_free(struct kafka_message *msg);
+
+/* message_set.c */
+struct kafka_message_set *kafka_message_set_new(void);
+void kafka_message_set_free(struct kafka_message_set *set);
+size_t kafka_message_set_append(struct kafka_message_set *set,
+				struct kafka_message *msg);
 
 #endif

@@ -54,6 +54,10 @@ struct kafka_producer {
 	int res;
 };
 
+struct kafka_message_set {
+	struct vector *messages;
+};
+
 typedef enum {
 	PRODUCE=0,
 	FETCH=1,
