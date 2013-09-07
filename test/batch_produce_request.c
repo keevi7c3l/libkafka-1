@@ -30,20 +30,15 @@
 
 int main(int argc, char **argv)
 {
+	int rc = 0;
 	char *zkServer = "localhost:2181";
 	struct kafka_producer *p;
 	if (argc == 2) {
 		zkServer = argv[1];
 	}
 	p = kafka_producer_new(zkServer);
-	if (kafka_producer_status(p) == KAFKA_OK) {
-		struct kafka_message *msg;
-		msg = kafka_message_new("test", "hello world");
-		if (kafka_producer_send(p, msg, KAFKA_REQUEST_FULL_SYNC) != KAFKA_OK) {
-			fprintf(stderr, "request failed\n");
-		}
-		kafka_message_free(msg);
-
+	rc = kafka_producer_status(p);
+	if (rc == KAFKA_OK) {
 		struct kafka_message_set *set = kafka_message_set_new();
 		kafka_message_set_append(set, kafka_message_new("test", "test1"));
 		kafka_message_set_append(set, kafka_message_new("test", "test2"));
@@ -54,10 +49,13 @@ int main(int argc, char **argv)
 
 		if (kafka_producer_send_batch(p, set, KAFKA_REQUEST_FULL_SYNC) != KAFKA_OK) {
 			fprintf(stderr, "batch request failed\n");
+			rc = -1;
 		}
 
 		kafka_message_set_free(set);
 		kafka_producer_free(p);
+	} else {
+		fprintf(stderr, "%s\n", kafka_status_string(rc));
 	}
-	return 0;
+	return rc;
 }

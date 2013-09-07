@@ -10,5 +10,9 @@ pkgconfig_DATA = libkafka.pc
 EXTRA_DIST += libkafka.pc.in
 CLEANFILES += libkafka.pc
 
+TESTS = \
+	test/produce_request \
+	test/batch_produce_request
+
 clean-local:
 	rm -f *~
