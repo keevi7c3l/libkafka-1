@@ -1,5 +1,6 @@
 *.o
 *~
+*.log
 compile
 .dirstamp
 Makefile
@@ -26,3 +27,4 @@ libkafka.pc
 stamp-h1
 *.tar.gz
 *.html
+test-driver

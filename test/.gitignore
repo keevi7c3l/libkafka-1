@@ -1,1 +1,4 @@
-test
+produce_request
+batch_produce_request
+*.log
+*.trs
