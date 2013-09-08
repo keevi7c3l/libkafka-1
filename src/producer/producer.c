@@ -44,7 +44,6 @@ static int bootstrap_metadata(zhandle_t *zh, hashtable_t **brokers,
 			hashtable_t **metadata);
 static json_t *bootstrap_brokers(zhandle_t *zh);
 
-
 static partition_metadata_t *pick_random_topic_partition(struct kafka_producer *p,
 							struct kafka_message *msg);
 
@@ -196,12 +195,6 @@ kafka_producer_send_batch(struct kafka_producer *p,
 		res = dispatch(p, vec, sync, &failures);
 		if (res == KAFKA_OK)
 			break;
-
-		/**
-		 * Sometimes a failure happens because a broker just dies.
-		 * In this case there will be no response, but res != KAFKA_OK.
-		 * Just update metadata and retry the request.
-		 */
 
 		if (failures) {
 			/* vector of messages that failed. simple enough to retry */
