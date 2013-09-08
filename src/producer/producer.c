@@ -60,6 +60,8 @@ static int handle_topics_partitions_failures(hashtable_t *topicsPartitions,
 					hashtable_t *failedRequest,
 					struct vector *failedMessages);
 
+static int try_send(struct kafka_producer *p, struct vector *messages,
+		int16_t sync);
 static int dispatch(struct kafka_producer *p, struct vector *messages,
 		int16_t sync, struct vector **out);
 
@@ -112,39 +114,6 @@ kafka_producer_status(struct kafka_producer *p)
 		return KAFKA_PRODUCER_ERROR;
 	CHECK_OBJ(p, KAFKA_PRODUCER_MAGIC);
 	return p->res;
-}
-
-static int
-try_send(struct kafka_producer *p, struct vector *messages, int16_t sync)
-{
-	int res, retries = 4;
-	while (retries > 0) {
-		struct vector *failures;
-		res = dispatch(p, messages, sync, &failures);
-		if (res == KAFKA_OK)
-			break;
-
-		/**
-		 * Sometimes a failure happens because a broker just dies.
-		 * In this case there will be no response, but res != KAFKA_OK.
-		 * Just update metadata and retry the request.
-		 */
-
-		if (failures) {
-			/* vector of messages that failed. simple enough to retry */
-			messages = failures;
-		}
-
-		producer_metadata_free(p);
-		if (bootstrap_metadata(p->zh, &p->brokers, &p->metadata) == -1) {
-			res = KAFKA_METADATA_ERROR;
-			break;
-		}
-		retries--;
-	}
-	if (retries == 0)
-		res = -1;
-	return res;
 }
 
 KAFKA_EXPORT int
@@ -538,6 +507,39 @@ handle_topics_partitions_failures(hashtable_t *topicsPartitions,
 		}
 	}
 	return 0;
+}
+
+static int
+try_send(struct kafka_producer *p, struct vector *messages, int16_t sync)
+{
+	int res, retries = 4;
+	while (retries > 0) {
+		struct vector *failures;
+		res = dispatch(p, messages, sync, &failures);
+		if (res == KAFKA_OK)
+			break;
+
+		/**
+		 * Sometimes a failure happens because a broker just dies.
+		 * In this case there will be no response, but res != KAFKA_OK.
+		 * Just update metadata and retry the request.
+		 */
+
+		if (failures) {
+			/* vector of messages that failed. simple enough to retry */
+			messages = failures;
+		}
+
+		producer_metadata_free(p);
+		if (bootstrap_metadata(p->zh, &p->brokers, &p->metadata) == -1) {
+			res = KAFKA_METADATA_ERROR;
+			break;
+		}
+		retries--;
+	}
+	if (retries == 0)
+		res = -1;
+	return res;
 }
 
 static int
