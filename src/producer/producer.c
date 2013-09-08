@@ -129,21 +129,7 @@ kafka_producer_send(struct kafka_producer *p, struct kafka_message *msg,
 	 * time. Probably using a separate thread.
 	 */
 	int res;
-
 	CHECK_OBJ_NOTNULL(p, KAFKA_PRODUCER_MAGIC);
-
-	/**
-	 * This works for sending a single message but not when you're batching
-	 * many messages to different topics partitions and brokers.
-	 *
-	 * You would have to rebuild every request object and reassign messages
-	 * depending on which broker now controls which topic-partition (right?)
-	 *
-	 * Apache Kafka's (v0.8) producer library loops over each message and
-	 * groups them into the appropriate buckets on send.
-	 *
-	 * See partitionAndCollate() in producer/async/DefaultEventHandler.scala
-	 */
 
 	struct vector *vec = vector_new(1, NULL);
 	vector_push_back(vec, msg);
