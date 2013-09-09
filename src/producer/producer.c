@@ -560,7 +560,6 @@ dispatch(struct kafka_producer *p, struct vector *messages, int16_t sync, struct
 		hashtable_t *topicsPartitions = hashtable_iter_value(iter);
 		hashtable_t *failures;
 		res = send_produce_request(p, brokerId, topicsPartitions, sync, &failures);
-
 		if (failures) {
 			res = -1;
 			if (!failedMessages)

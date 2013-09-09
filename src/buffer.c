@@ -71,12 +71,14 @@ KafkaBufferReserve(KafkaBuffer *buffer, size_t size)
 size_t
 KafkaBufferResize(KafkaBuffer *buffer)
 {
-	size_t sz;
+	size_t sz, curOffset;
 	uint8_t *ptr;
 	sz = buffer->alloced * 2;
+	curOffset = buffer->cur - buffer->data;
 	ptr = realloc(buffer->data, sz);
 	assert(ptr);
 	buffer->data = ptr;
+	buffer->cur = &buffer->data[curOffset];
 	memset(&buffer->data[buffer->alloced], 0, buffer->alloced);
 	buffer->alloced = sz;
 	return sz;

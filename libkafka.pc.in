@@ -6,5 +6,5 @@ includedir=@includedir@
 Name: libkafka
 Description: Apache Kafka C Library
 Version: @PACKAGE_VERSION@
-Cflags: -I${includedir}/kafka
+Cflags: -I${includedir}/libkafka
 Libs: -L${libdir} -lkafka -lzookeeper_mt
