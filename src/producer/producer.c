@@ -199,6 +199,10 @@ producer_metadata_free(struct kafka_producer *p)
 static int
 bootstrap_metadata(zhandle_t *zh, hashtable_t **brokersOut, hashtable_t **metadataOut)
 {
+	/**
+	 * @todo: bootstrap for subset of topics and only set those topics
+	 * rather than overwriting all metadata.
+	 */
 	int rc = 0;
 	void *iter;
 	json_t *brokers;
