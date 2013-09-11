@@ -6,15 +6,15 @@ compiler:
 
 before_install:
   - sudo apt-get update -qq
-  - sudo apt-get install -qq libzookeeper-mt-dev screen
+  - sudo apt-get install -qq libzookeeper-mt-dev
   - curl -O https://dist.apache.org/repos/dist/release/kafka/kafka-0.8.0-beta1-src.tgz
   - tar xzf kafka-0.8.0-beta1-src.tgz
   - cd kafka-0.8.0-beta1-src
   - ./sbt update
   - ./sbt package
   - ./sbt assembly-package-dependency
-  - screen -d -m -L ./bin/zookeeper-server-start.sh ./config/zookeeper.properties
-  - screen -d -m -L ./bin/kafka-server-start.sh ./config/server.properties
+  - nohup ./bin/zookeeper-server-start.sh ./config/zookeeper.properties &
+  - nohup ./bin/kafka-server-start.sh ./config/server.properties &
   - ./bin/kafka-create-topic.sh --zookeeper localhost:2181 --topic test
   - cd ..
 
