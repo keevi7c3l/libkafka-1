@@ -16,5 +16,6 @@ before_install:
   - screen -d -m -L ./bin/zookeeper-server-start.sh ./config/zookeeper.properties
   - screen -d -m -L ./bin/kafka-server-start.sh ./config/server.properties
   - ./bin/kafka-create-topic.sh --zookeeper localhost:2181 --topic test
+  - cd ..
 
 script: ./autogen.sh && ./configure && make && make check
