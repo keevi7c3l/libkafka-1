@@ -166,34 +166,38 @@ producer_metadata_free(struct kafka_producer *p)
 {
 	void *i, *j;
 
-	i = hashtable_iter(p->brokers);
-	for (; i; i = hashtable_iter_next(p->brokers, i)) {
-		int fd;
-		broker_t *broker = hashtable_iter_value(i);
-		if (broker) {
-			close(broker->fd);
-			free(broker->hostname);
-			free(broker);
+	if (p->brokers) {
+		i = hashtable_iter(p->brokers);
+		for (; i; i = hashtable_iter_next(p->brokers, i)) {
+			int fd;
+			broker_t *broker = hashtable_iter_value(i);
+			if (broker) {
+				close(broker->fd);
+				free(broker->hostname);
+				free(broker);
+			}
 		}
+		hashtable_destroy(p->brokers);
 	}
 
 	/* TODO: setup value free in hashtable_create so this can go away */
-	i = hashtable_iter(p->metadata);
-	for (; i; i = hashtable_iter_next(p->metadata, i)) {
-		topic_metadata_t *topic = hashtable_iter_value(i);
-		j = hashtable_iter(topic->partitions);
-		for (; j; j = hashtable_iter_next(topic->partitions, j)) {
-			partition_metadata_t *part = hashtable_iter_value(j);
-			hashtable_destroy(part->replicas);
-			hashtable_destroy(part->isr);
-			free(part);
+	if (p->metadata) {
+		i = hashtable_iter(p->metadata);
+		for (; i; i = hashtable_iter_next(p->metadata, i)) {
+			topic_metadata_t *topic = hashtable_iter_value(i);
+			j = hashtable_iter(topic->partitions);
+			for (; j; j = hashtable_iter_next(topic->partitions, j)) {
+				partition_metadata_t *part = hashtable_iter_value(j);
+				hashtable_destroy(part->replicas);
+				hashtable_destroy(part->isr);
+				free(part);
+			}
+			hashtable_destroy(topic->partitions);
+			free(topic->topic);
+			free(topic);
 		}
-		hashtable_destroy(topic->partitions);
-		free(topic->topic);
-		free(topic);
+		hashtable_destroy(p->metadata);
 	}
-	hashtable_destroy(p->brokers);
-	hashtable_destroy(p->metadata);
 }
 
 static int
