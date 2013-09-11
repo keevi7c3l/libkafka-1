@@ -18,4 +18,4 @@ before_install:
   - ./bin/kafka-create-topic.sh --zookeeper localhost:2181 --topic test
   - cd ..
 
-script: ./autogen.sh && ./configure && make && make check
+script: ./autogen.sh && ./configure && make check
