@@ -6,7 +6,7 @@ compiler:
 
 before_install:
   - sudo apt-get update -qq
-  - sudo apt-get install -qq libzookeeper-mt-dev
+  - sudo apt-get install -qq libzookeeper-mt-dev screen
   - curl -O https://dist.apache.org/repos/dist/release/kafka/kafka-0.8.0-beta1-src.tgz
   - tar xzf kafka-0.8.0-beta1-src.tgz
   - cd kafka-0.8.0-beta1-src
