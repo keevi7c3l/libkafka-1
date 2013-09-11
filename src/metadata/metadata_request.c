@@ -27,7 +27,10 @@
 #include <assert.h>
 #include <string.h>
 #include <errno.h>
+#include <unistd.h>
 #include "../kafka-private.h"
+#include "../serialize.h"
+#include "../vector.h"
 
 static void print_broker(broker_t *broker);
 static topic_metadata_t *topic_metadata_new(char *topic, int32_t num_partitions,

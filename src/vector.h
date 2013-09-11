@@ -40,5 +40,6 @@ void *vector_back(struct vector *v);
 void *vector_at(struct vector *v, unsigned u);
 int vector_empty(struct vector *v);
 void vector_erase(struct vector *v, unsigned u);
+unsigned vector_size(struct vector *v);
 
 #endif

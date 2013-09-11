@@ -28,6 +28,7 @@
 #include <string.h>
 #include <assert.h>
 #include "../kafka-private.h"
+#include "../serialize.h"
 
 static hashtable_t *
 map_partition_replicas(KafkaBuffer *buffer, hashtable_t *brokers)

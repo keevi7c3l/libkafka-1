@@ -27,15 +27,16 @@
 #include <assert.h>
 #include <string.h>
 #include "serialize.h"
+#include "vector.h"
 
-inline size_t
+size_t
 uint8_unpack(uint8_t *ptr, uint8_t *value)
 {
 	memcpy(value, ptr, 1);
 	return 1;
 }
 
-inline size_t
+size_t
 uint16_unpack(uint8_t *ptr, uint16_t *value)
 {
 	uint16_t v;
@@ -44,7 +45,7 @@ uint16_unpack(uint8_t *ptr, uint16_t *value)
 	return 2;
 }
 
-inline size_t
+size_t
 uint32_unpack(uint8_t *ptr, uint32_t *value)
 {
 	uint32_t v;
@@ -53,7 +54,7 @@ uint32_unpack(uint8_t *ptr, uint32_t *value)
 	return 4;
 }
 
-inline size_t
+size_t
 uint64_unpack(uint8_t *ptr, uint64_t *value)
 {
 	uint32_t v;
@@ -64,7 +65,7 @@ uint64_unpack(uint8_t *ptr, uint64_t *value)
 	return 8;
 }
 
-inline size_t
+size_t
 string_unpack(uint8_t *ptr, char **value)
 {
 	/**
@@ -79,14 +80,14 @@ string_unpack(uint8_t *ptr, char **value)
 	return 2 + len;
 }
 
-inline size_t
+size_t
 uint8_pack(uint8_t value, uint8_t *ptr)
 {
 	memcpy(ptr, &value, 1);
 	return 1;
 }
 
-inline size_t
+size_t
 uint16_pack(uint16_t value, uint8_t *ptr)
 {
 	value = htons(value);
@@ -94,7 +95,7 @@ uint16_pack(uint16_t value, uint8_t *ptr)
 	return 2;
 }
 
-inline size_t
+size_t
 uint32_pack(uint32_t value, uint8_t *ptr)
 {
 	value = htonl(value);
@@ -102,7 +103,7 @@ uint32_pack(uint32_t value, uint8_t *ptr)
 	return 4;
 }
 
-inline size_t
+size_t
 uint64_pack(uint64_t value, uint8_t *ptr)
 {
 	uint32_t v;
@@ -113,7 +114,7 @@ uint64_pack(uint64_t value, uint8_t *ptr)
 	return 8;
 }
 
-inline size_t
+size_t
 string_pack(const char *str, uint8_t *ptr)
 {
 	/**
@@ -125,7 +126,7 @@ string_pack(const char *str, uint8_t *ptr)
 	return offset + len;
 }
 
-inline size_t
+size_t
 bytestring_pack(bytestring_t *str, uint8_t *ptr)
 {
 	/**
@@ -139,7 +140,7 @@ bytestring_pack(bytestring_t *str, uint8_t *ptr)
 	return offset;
 }
 
-static inline size_t
+static size_t
 kafka_message_serialize0(struct kafka_message *m, uint8_t *ptr)
 {
 	int32_t crc;
@@ -222,7 +223,7 @@ serialize_topics_and_partitions(hashtable_t *topicsAndPartitions, KafkaBuffer *b
 	return buffer->cur - buffer->data;
 }
 
-inline size_t
+size_t
 request_header_pack(request_header_t *header, const char *client, uint8_t *ptr)
 {
 	size_t offset = 0;

@@ -51,11 +51,13 @@ create_message(const char *topic, const char *key, const char *value)
 	msg->key->len = -1;
 	if (key) {
 		msg->key->len = strlen(key);
-		msg->key->data = strdup(key);
+		msg->key->data = calloc(msg->key->len+1, 1);
+		memcpy(msg->key->data, key, msg->key->len);
 	}
 	msg->value = calloc(1, sizeof *msg->value);
 	msg->value->len = strlen(value);
-	msg->value->data = strdup(value);
+	msg->value->data = calloc(msg->value->len+1, 1);
+	memcpy(msg->value->data, value, msg->value->len);
 	msg->topic = strdup(topic);
 	return msg;
 }

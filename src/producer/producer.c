@@ -31,13 +31,14 @@
 #include <string.h>
 #include <pthread.h>
 #include <poll.h>
+#include <unistd.h>
 
 #include <zookeeper/zookeeper.h>
 
 #include <kafka.h>
 #include "../kafka-private.h"
-
 #include "../jansson/jansson.h"
+#include "serialize.h"
 
 static void producer_metadata_free(struct kafka_producer *p);
 static int bootstrap_metadata(zhandle_t *zh, hashtable_t **brokers,
