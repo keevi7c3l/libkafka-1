@@ -12,6 +12,7 @@ before_install:
   - cd kafka-0.8.0-beta1-src
   - ./sbt update
   - ./sbt package
+  - ./sbt assembly-package-dependency
   - screen -R zookeeper -d -m -L ./bin/zookeeper-server-start.sh ./config/zookeeper.properties
   - screen -R kafka -d -m -L ./bin/kafka-server-start.sh ./config/server.properties
   - ./bin/kafka-create-topic.sh --zookeeper localhost:2181 --topic test
