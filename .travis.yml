@@ -13,7 +13,7 @@ before_install:
   - ./sbt update
   - ./sbt package
   - cd ..
-  - sudo mv kafka-0.8.0-beta1-src.tgz /usr/local/kafka
+  - sudo mv kafka-0.8.0-beta1-src /usr/local/kafka
   - screen -R zookeeper -d -m -L /usr/local/kafka/bin/zookeeper-server-start.sh /usr/local/kafka/config/zookeeper.properties
   - screen -R kafka -d -m -L /usr/local/kafka/bin/kafka-server-start.sh /usr/local/kafka/config/server.properties
   - /usr/local/kafka/bin/kafka-create-topic.sh --zookeeper localhost:2181 --topic test
