@@ -86,7 +86,7 @@ metadata_request_write(int fd, struct metadata_request *r)
 	size_t len;
 	uint8_t *buffer;
 
-	len = metadata_request_pack(r, &buffer);
+	len = metadata_request_to_buffer(r, &buffer);
 
 	do {
 		rc = write(fd, buffer, len);

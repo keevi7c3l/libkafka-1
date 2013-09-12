@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 #include <kafka.h>
 
 static uint8_t reference[] = {

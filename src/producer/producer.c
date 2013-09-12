@@ -29,7 +29,7 @@
 #include <time.h>
 #include <assert.h>
 #include <string.h>
-#include <pthread.h>
+#include <arpa/inet.h>
 #include <poll.h>
 #include <unistd.h>
 
