@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/davidreynolds/libkafka.png?branch=master)](https://travis-ci.org/davidreynolds/libkafka)
+
 C library for interacting with Apache Kafka 0.8.
 
 License: 2-Clause BSD
