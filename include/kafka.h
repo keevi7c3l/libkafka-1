@@ -60,6 +60,8 @@
 struct kafka_producer;
 struct kafka_message;
 struct kafka_message_set;
+struct metadata_request;
+struct metadata_response;
 
 /* kafka.c */
 const char *kafka_status_string(int status);
@@ -84,5 +86,14 @@ struct kafka_message_set *kafka_message_set_new(void);
 void kafka_message_set_free(struct kafka_message_set *set);
 size_t kafka_message_set_append(struct kafka_message_set *set,
 				struct kafka_message *msg);
+
+/* metadata/metadata_request.c */
+struct metadata_request *metadata_request_new(const char **topics, const char *client);
+size_t metadata_request_to_buffer(struct metadata_request *r, uint8_t **out);
+int metadata_request_write(int fd, struct metadata_request *r);
+
+/* metadata/metadata_response.c */
+struct metadata_response *metadata_response_read(int fd);
+struct metadata_response *metadata_response_from_buffer(uint8_t *buffer, size_t size);
 
 #endif

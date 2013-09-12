@@ -41,8 +41,7 @@
 #include "serialize.h"
 
 static void producer_metadata_free(struct kafka_producer *p);
-static int bootstrap_metadata(zhandle_t *zh, hashtable_t **brokers,
-			hashtable_t **metadata);
+static struct metadata_response *bootstrap_metadata(zhandle_t *zh);
 static json_t *bootstrap_brokers(zhandle_t *zh);
 
 static partition_metadata_t *pick_random_topic_partition(struct kafka_producer *p,
@@ -71,7 +70,7 @@ kafka_producer_new(const char *zkServer)
 {
 	int rc;
 	struct kafka_producer *p;
-	topic_metadata_response_t *metadata_resp;
+	struct metadata_response *metadata_resp;
 
 	srand(time(0));
 
@@ -100,10 +99,14 @@ kafka_producer_new(const char *zkServer)
 
 	p->magic = KAFKA_PRODUCER_MAGIC;
 
-	if (bootstrap_metadata(p->zh, &p->brokers, &p->metadata) == -1) {
+	metadata_resp = bootstrap_metadata(p->zh);
+	if (!metadata_resp) {
 		p->res = KAFKA_METADATA_ERROR;
 		goto finish;
 	}
+	p->brokers = metadata_resp->brokers;
+	p->metadata = metadata_resp->metadata;
+	free(metadata_resp);
 finish:
 	return p;
 }
@@ -201,19 +204,19 @@ producer_metadata_free(struct kafka_producer *p)
 	}
 }
 
-static int
-bootstrap_metadata(zhandle_t *zh, hashtable_t **brokersOut, hashtable_t **metadataOut)
+static struct metadata_response *
+bootstrap_metadata(zhandle_t *zh)
 {
 	/**
 	 * @todo: bootstrap for subset of topics and only set those topics
 	 * rather than overwriting all metadata.
 	 */
-	int rc = 0;
 	void *iter;
 	json_t *brokers;
+	struct metadata_response *resp;
 	brokers = bootstrap_brokers(zh);
 	if (!brokers) {
-		return -1;
+		return NULL;
 	}
 
 	/* query for metadata */
@@ -227,13 +230,13 @@ bootstrap_metadata(zhandle_t *zh, hashtable_t **brokersOut, hashtable_t **metada
 		broker.id = json_integer_value(json_object_get(obj, "id"));
 		broker_connect(&broker);
 		/* TODO: check for "Leader Not Available" responses and wait/retry */
-		rc = TopicMetadataRequest(&broker, NULL, brokersOut, metadataOut);
+		resp = topic_metadata_request(&broker, NULL);
 		close(broker.fd);
-		if (rc == 0)
+		if (resp)
 			break;
 	}
 	json_decref(brokers);
-	return rc;
+	return resp;
 }
 
 static json_t *
@@ -540,10 +543,15 @@ try_send(struct kafka_producer *p, struct vector *messages, int16_t sync)
 		}
 
 		producer_metadata_free(p);
-		if (bootstrap_metadata(p->zh, &p->brokers, &p->metadata) == -1) {
+		struct metadata_response *resp;
+		resp = bootstrap_metadata(p->zh);
+		if (!resp) {
 			res = KAFKA_METADATA_ERROR;
 			break;
 		}
+		p->brokers = resp->brokers;
+		p->metadata = resp->metadata;
+		free(resp);
 		retries--;
 	}
 	if (retries == 0)

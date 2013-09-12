@@ -30,35 +30,36 @@
 #include "../kafka-private.h"
 #include "../serialize.h"
 
-static hashtable_t *
-map_partition_replicas(KafkaBuffer *buffer, hashtable_t *brokers)
+static size_t
+map_partition_replicas(uint8_t *ptr, hashtable_t *brokers, hashtable_t **out)
 {
+	size_t u = 0;
 	int32_t i, num_replicas;
 	hashtable_t *r = hashtable_create(int32_hash, int32_cmp, free, NULL);
-	buffer->cur += uint32_unpack(buffer->cur, &num_replicas);
-	assert(buffer->cur < &buffer->data[buffer->len]);
+	u += uint32_unpack(ptr, &num_replicas);
 	for (i = 0; i < num_replicas; i++) {
 		int32_t *replica_id = calloc(1, sizeof(int32_t));
-		buffer->cur += uint32_unpack(buffer->cur, replica_id);
-		assert(buffer->cur < &buffer->data[buffer->len]);
+		u += uint32_unpack(ptr, replica_id);
 		hashtable_set(r, replica_id, hashtable_get(brokers, replica_id));
 	}
-	return r;
+	*out = r;
+	return u;
 }
 
-static hashtable_t *
-map_partition_isr(KafkaBuffer *buffer, hashtable_t *brokers)
+static size_t
+map_partition_isr(uint8_t *ptr, hashtable_t *brokers, hashtable_t **out)
 {
+	size_t u = 0;
 	int32_t i, num_isr;
 	hashtable_t *isr = hashtable_create(int32_hash, int32_cmp, free, NULL);
-	buffer->cur += uint32_unpack(buffer->cur, &num_isr);
-	assert(buffer->cur < &buffer->data[buffer->len]);
+	u += uint32_unpack(ptr+u, &num_isr);
 	for (i = 0; i < num_isr; i++) {
 		int32_t *isr_id = calloc(1, sizeof(int32_t));
-		buffer->cur += uint32_unpack(buffer->cur, isr_id);
+		u += uint32_unpack(ptr+u, isr_id);
 		hashtable_set(isr, isr_id, hashtable_get(brokers, isr_id));
 	}
-	return isr;
+	*out = isr;
+	return u;
 }
 
 partition_metadata_t *
@@ -75,8 +76,9 @@ partition_metadata_new(int32_t partition_id, broker_t *leader,
 	return p;
 }
 
-partition_metadata_t *
-partition_metadata_from_buffer(KafkaBuffer *buffer, hashtable_t *brokers)
+size_t
+partition_metadata_from_buffer(uint8_t *ptr, hashtable_t *brokers,
+			partition_metadata_t **out)
 {
 	int32_t i;
 	int16_t err_code;
@@ -84,15 +86,16 @@ partition_metadata_from_buffer(KafkaBuffer *buffer, hashtable_t *brokers)
 	int32_t leader_id;
 	broker_t *leader;
 	hashtable_t *replicas, *isr;
-
-	buffer->cur += uint16_unpack(buffer->cur, &err_code);
-	buffer->cur += uint32_unpack(buffer->cur, &partition_id);
-	buffer->cur += uint32_unpack(buffer->cur, &leader_id);
+	size_t u = 0;
+	u += uint16_unpack(ptr, &err_code);
+	u += uint32_unpack(ptr+u, &partition_id);
+	u += uint32_unpack(ptr+u, &leader_id);
 
 	leader = hashtable_get(brokers, &leader_id);
-	replicas = map_partition_replicas(buffer, brokers);
-	isr = map_partition_isr(buffer, brokers);
+	u += map_partition_replicas(ptr+u, brokers, &replicas);
+	u += map_partition_isr(ptr+u, brokers, &isr);
 
-	return partition_metadata_new(partition_id, leader, replicas, isr,
+	*out = partition_metadata_new(partition_id, leader, replicas, isr,
 				err_code);
+	return u;
 }

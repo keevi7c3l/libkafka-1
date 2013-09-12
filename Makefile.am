@@ -10,7 +10,8 @@ pkgconfig_DATA = libkafka.pc
 EXTRA_DIST += libkafka.pc.in
 CLEANFILES += libkafka.pc
 
-TESTS =
+TESTS = \
+	test/test_metadata_request
 
 clean-local:
 	rm -f *~

@@ -10,6 +10,17 @@ global:
         kafka_keyed_message_new;
         kafka_message_free;
 
+        kafka_message_set_new;
+        kafka_message_set_free;
+        kafka_message_set_append;
+
+        metadata_request_new;
+        metadata_request_to_buffer;
+        metadata_request_write;
+
+        metadata_response_read;
+        metadata_response_from_buffer;
+
 local:
         *;
 };

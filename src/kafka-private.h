@@ -102,11 +102,6 @@ typedef struct {
 } topic_metadata_t;
 
 typedef struct {
-	hashtable_t *brokers;
-	hashtable_t *topicsMetadata;
-} topic_metadata_response_t;
-
-typedef struct {
 	int64_t offset;
 	int32_t size;
 	int32_t crc;
@@ -120,6 +115,21 @@ typedef struct {
 	int16_t apiversion;
 	int32_t correlation_id;
 } __attribute__((packed)) request_header_t;
+
+struct metadata_request {
+	request_header_t header;
+	char *client;
+	int32_t numTopics;
+	char **topics;
+};
+
+struct metadata_response {
+	int32_t correlation_id;
+	int32_t numBrokers;
+	int32_t numTopics;
+	hashtable_t *brokers;
+	hashtable_t *metadata;
+};
 
 typedef struct {
 	int32_t partition;
@@ -146,8 +156,8 @@ struct kafka_message {
 /* metadata/partition_metadata.c */
 partition_metadata_t *partition_metadata_new(int32_t partition_id, broker_t *broker,
 					hashtable_t *replicas, hashtable_t *isr, int16_t error);
-partition_metadata_t *partition_metadata_from_buffer(KafkaBuffer *buffer,
-						hashtable_t *brokers);
+size_t partition_metadata_from_buffer(uint8_t *ptr,
+				hashtable_t *brokers, partition_metadata_t **out);
 
 /* broker.c */
 int nonblocking(int fd);
@@ -180,9 +190,7 @@ void producer_init_watcher(zhandle_t *zp, int type, int state,
 			const char *path, void *ctx);
 
 /* metadata/metadata_request.c */
-
-int TopicMetadataRequest(broker_t *broker, const char **topics,
-			hashtable_t **brokers, hashtable_t **metadata);
+struct metadata_response *topic_metadata_request(broker_t *broker, const char **topics);
 
 /**
  * OBJ stuff taken from miniobj.h in Varnish. Written by PHK.
