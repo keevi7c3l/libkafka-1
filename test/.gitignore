@@ -1,4 +1,5 @@
 produce_request
 batch_produce_request
+test_metadata_request
 *.log
 *.trs
